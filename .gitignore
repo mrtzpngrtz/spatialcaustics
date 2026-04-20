@@ -18,6 +18,12 @@ dist/
 01_output/
 *.stl
 
+# Project data (large height fields)
+backend/projects/
+
+# Claude Code
+.claude/
+
 # IDE / OS
 .DS_Store
 Thumbs.db
