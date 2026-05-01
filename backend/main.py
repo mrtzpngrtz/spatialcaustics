@@ -46,6 +46,8 @@ class ComputeRequest(BaseModel):
     resolution: int = Field(256, ge=32, le=2048, description="Solver grid resolution")
     physical_size_x: float = Field(0.05, gt=0.01, le=0.5, description="Lens width (m)")
     physical_size_y: float = Field(0.05, gt=0.01, le=0.5, description="Lens height (m)")
+    incident_theta: float = Field(0.0, ge=0.0, le=85.0, description="Incident light elevation from normal (deg)")
+    incident_phi: float = Field(0.0, ge=0.0, lt=360.0, description="Incident light azimuth (deg, 0=+Y)")
 
     @field_validator("image")
     @classmethod
@@ -82,6 +84,7 @@ class ExportSTLRequest(BaseModel):
     negative: bool = Field(False, description="Export mold (negative) instead of lens")
     border_height: float = Field(0.0005, ge=0.0, le=0.1, description="Mold border wall height above cavity (m)")
     wall_thickness: float = Field(0.003, gt=0.0, le=0.05, description="Mold wall thickness (m)")
+    base_curve_radius: float | None = Field(None, description="Spherical base radius (m) for biconvex lens. None = flat.")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -102,6 +105,8 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
             resolution=req.resolution,
             physical_size_x=req.physical_size_x,
             physical_size_y=req.physical_size_y,
+            incident_theta=req.incident_theta,
+            incident_phi=req.incident_phi,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -164,6 +169,7 @@ async def export_stl(req: ExportSTLRequest) -> Response:
                 base_thickness=req.base_thickness,
                 physical_size=req.physical_size_x,
                 physical_size_y=req.physical_size_y,
+                base_curve_radius=req.base_curve_radius,
             )
     except Exception as e:
         logger.exception("STL export error")

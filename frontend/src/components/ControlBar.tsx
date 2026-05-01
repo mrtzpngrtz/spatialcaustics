@@ -158,6 +158,8 @@ export function ControlBar() {
             resolution: params.resolution,
             physical_size_x: params.physical_size_x,
             physical_size_y: params.physical_size_y,
+            incident_theta: params.incident_theta,
+            incident_phi: params.incident_phi,
           });
         }}
       >

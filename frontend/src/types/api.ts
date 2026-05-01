@@ -7,6 +7,8 @@ export interface ComputeRequest {
   resolution: number;
   physical_size_x: number;
   physical_size_y: number;
+  incident_theta: number;
+  incident_phi: number;
 }
 
 export interface ComputeResponse {
@@ -25,6 +27,7 @@ export interface ExportSTLRequest {
   negative?: boolean;
   border_height?: number;
   wall_thickness?: number;
+  base_curve_radius?: number | null;
 }
 
 export interface SimulateResponse {
@@ -57,4 +60,6 @@ export interface LensParams {
   base_thickness: number;
   physical_size_x: number;
   physical_size_y: number;
+  incident_theta: number;
+  incident_phi: number;
 }

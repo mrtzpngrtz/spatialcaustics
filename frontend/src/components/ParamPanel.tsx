@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLensStore } from "../stores/lensStore";
 import type { LensParams } from "../types/api";
 
@@ -162,6 +162,119 @@ function SliderRow({ label, paramKey, min, max, step, unit, scale = 1, decimals 
   );
 }
 
+// ── Light direction picker ─────────────────────────────────────────────────────
+
+const SIZE = 150;
+const CX = SIZE / 2;
+const CY = SIZE / 2;
+const R = 60;
+
+function LightDirPicker() {
+  const { params, setParam } = useLensStore();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragging = useRef(false);
+
+  const theta = params.incident_theta;
+  const phi = params.incident_phi;
+  const dotR = (theta / 90) * R;
+  const phiRad = (phi * Math.PI) / 180;
+  const dotX = CX + dotR * Math.sin(phiRad);
+  const dotY = CY - dotR * Math.cos(phiRad);
+
+  const update = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const dx = ((clientX - rect.left) / rect.width) * SIZE - CX;
+    const dy = -(((clientY - rect.top) / rect.height) * SIZE - CY);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    setParam("incident_theta", Math.min(85, Math.round((dist / R) * 90 * 10) / 10));
+    setParam("incident_phi", dist < 1 ? 0 : Math.round(((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360));
+  };
+
+  const active = theta > 0.5;
+
+  return (
+    <div style={{ padding: "16px 0 4px" }}>
+      <div style={{
+        fontSize: 10, fontWeight: 500, letterSpacing: "0.1em",
+        textTransform: "uppercase" as const, color: "#bbb",
+        fontFamily: "'JetBrains Mono', monospace", marginBottom: 12,
+      }}>
+        Light direction
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <svg
+          ref={svgRef}
+          width={SIZE} height={SIZE}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          style={{ cursor: "crosshair", flexShrink: 0, borderRadius: "50%" }}
+          onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); update(e.clientX, e.clientY); }}
+          onPointerMove={(e) => { if (dragging.current) update(e.clientX, e.clientY); }}
+          onPointerUp={() => { dragging.current = false; }}
+        >
+          <circle cx={CX} cy={CY} r={R + 1} fill="#0e0e0e" />
+          <circle cx={CX} cy={CY} r={R * (30 / 90)} fill="none" stroke="#222" strokeWidth={0.5} />
+          <circle cx={CX} cy={CY} r={R * (60 / 90)} fill="none" stroke="#222" strokeWidth={0.5} />
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke="#2a2a2a" strokeWidth={1} />
+          <line x1={CX} y1={CY - R} x2={CX} y2={CY + R} stroke="#1e1e1e" strokeWidth={0.5} />
+          <line x1={CX - R} y1={CY} x2={CX + R} y2={CY} stroke="#1e1e1e" strokeWidth={0.5} />
+          {["N","E","S","W"].map((l, i) => {
+            const a = i * 90 * Math.PI / 180;
+            return <text key={l} x={CX + (R + 6) * Math.sin(a)} y={CY - (R + 6) * Math.cos(a) + 3}
+              textAnchor="middle" fontSize={6} fill="#333" fontFamily="monospace">{l}</text>;
+          })}
+          {active && <line x1={CX} y1={CY} x2={dotX} y2={dotY} stroke="#ff5500" strokeWidth={0.5} strokeOpacity={0.35} />}
+          <circle cx={dotX} cy={dotY} r={6} fill={active ? "#ff5500" : "#333"} fillOpacity={0.9} />
+          {active && [0,45,90,135,180,225,270,315].map(a => {
+            const ar = a * Math.PI / 180;
+            return <line key={a} x1={dotX + 7 * Math.cos(ar)} y1={dotY + 7 * Math.sin(ar)}
+              x2={dotX + 10 * Math.cos(ar)} y2={dotY + 10 * Math.sin(ar)}
+              stroke="#ff5500" strokeWidth={1} strokeOpacity={0.5} />;
+          })}
+          <circle cx={CX} cy={CY} r={2.5} fill="#1a1a1a" stroke="#333" strokeWidth={0.5} />
+        </svg>
+
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", paddingTop: 6 }}>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 9, color: "#555", marginBottom: 3, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>elev</div>
+            <div style={{ fontSize: 15, color: active ? "#ff5500" : "#444" }}>{theta.toFixed(1)}°</div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 9, color: "#555", marginBottom: 3, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>az</div>
+            <div style={{ fontSize: 15, color: active ? "#ff5500" : "#444" }}>{phi.toFixed(0)}°</div>
+          </div>
+          <div style={{ fontSize: 9, color: active ? "#666" : "#333", lineHeight: 1.5, marginBottom: 10 }}>
+            {active ? (() => {
+              const shiftCm = (params.proj_dist * Math.tan(theta * Math.PI / 180) * 100);
+              return <>shift<br /><span style={{ color: "#ff5500" }}>{shiftCm.toFixed(1)}cm</span><br />on wall</>;
+            })() : <>center = vertical<br />drag to tilt</>}
+          </div>
+          {active && (
+            <button
+              onClick={() => { setParam("incident_theta", 0); setParam("incident_phi", 0); }}
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 9,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#666",
+                padding: "3px 7px",
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              reset
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ParamPanel() {
@@ -207,11 +320,13 @@ export function ParamPanel() {
 
       <div className="param-panel">
         <Section label="Optics">
-          <SliderRow label="refractive index n" paramKey="n" min={1.1} max={2.5} step={0.001} unit="" decimals={3} />
-          <SliderRow label="thickness d" paramKey="thickness" min={0.001} max={0.02} step={0.0001} unit="mm" scale={1000} decimals={2} />
-          <SliderRow label="projection dist L" paramKey="proj_dist" min={0.05} max={3.0} step={0.001} unit="m" decimals={3} />
-          <SliderRow label="smoothing σ" paramKey="smoothing" min={0} max={10} step={0.05} unit="px" decimals={2} />
-          <div style={{ marginTop: 14, ...rowCss.selectRow }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px" }}>
+            <SliderRow label="refractive index n" paramKey="n" min={1.1} max={2.5} step={0.001} unit="" decimals={3} />
+            <SliderRow label="thickness d" paramKey="thickness" min={0.001} max={0.02} step={0.0001} unit="mm" scale={1000} decimals={2} />
+            <SliderRow label="projection dist L" paramKey="proj_dist" min={0.05} max={3.0} step={0.001} unit="m" decimals={3} />
+            <SliderRow label="smoothing σ" paramKey="smoothing" min={0} max={10} step={0.05} unit="px" decimals={2} />
+          </div>
+          <div style={{ marginTop: 6, ...rowCss.selectRow }}>
             <span style={rowCss.name}>resolution</span>
             <select
               value={params.resolution}
@@ -221,14 +336,17 @@ export function ParamPanel() {
               {resOptions.map((r) => <option key={r} value={r}>{r}×{r}</option>)}
             </select>
           </div>
+          <LightDirPicker />
         </Section>
 
         <Section label="Geometry">
-          <SliderRow label="base thickness" paramKey="base_thickness" min={0.001} max={0.01} step={0.0001} unit="mm" scale={1000} decimals={2} />
-          <SliderRow label="lens width" paramKey="physical_size_x" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
-          <SliderRow label="lens height" paramKey="physical_size_y" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 28px" }}>
+            <SliderRow label="base thickness" paramKey="base_thickness" min={0.001} max={0.01} step={0.0001} unit="mm" scale={1000} decimals={2} />
+            <SliderRow label="lens width" paramKey="physical_size_x" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
+            <SliderRow label="lens height" paramKey="physical_size_y" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
+          </div>
           {targetImageSize && (
-            <div style={{ marginTop: -6, marginBottom: 4 }}>
+            <div style={{ marginTop: 4 }}>
               <button
                 onClick={applyImageRatio}
                 style={{

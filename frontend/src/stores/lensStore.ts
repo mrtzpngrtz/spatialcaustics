@@ -43,6 +43,8 @@ const DEFAULT_PARAMS: LensParams = {
   base_thickness: 0.002,
   physical_size_x: 0.05,
   physical_size_y: 0.05,
+  incident_theta: 0,
+  incident_phi: 0,
 };
 
 const DEFAULT_MOLD_PARAMS: MoldParams = {

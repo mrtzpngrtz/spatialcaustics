@@ -236,6 +236,8 @@ function calcEpoxyMl(hf: number[][], thickness: number, sizeX: number, sizeY: nu
 export function ExportPanel({ onClose }: ExportPanelProps) {
   const { computeResult, params, moldParams, currentProjectName } = useLensStore();
   const canExport = computeResult !== null;
+  const [biconvex, setBiconvex] = useState(false);
+  const [baseCurveMm, setBaseCurveMm] = useState(200); // mm, default 200mm radius
 
   const epoxyMl = computeResult
     ? calcEpoxyMl(computeResult.height_field, params.thickness, params.physical_size_x, params.physical_size_y)
@@ -250,6 +252,7 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
     negative,
     border_height: moldParams.border_height,
     wall_thickness: moldParams.wall_thickness,
+    base_curve_radius: !negative && biconvex ? baseCurveMm / 1000 : null,
   });
 
   const lensMutation = useMutation({
@@ -287,6 +290,44 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
         {/* Lens STL */}
         <div style={css.section}>
           <span style={css.sectionLabel}>Lens STL</span>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 10 }}>
+              <input
+                type="checkbox"
+                checked={biconvex}
+                onChange={(e) => setBiconvex(e.target.checked)}
+                style={{ accentColor: "#ff5500" }}
+              />
+              <span style={{ ...css.name, fontSize: 11 }}>biconvex (curved both sides)</span>
+            </label>
+            {biconvex && (
+              <div style={css.row}>
+                <div style={css.rowLabel}>
+                  <span style={css.name}>base radius</span>
+                  <span style={{ display: "flex", alignItems: "baseline" }}>
+                    <input
+                      type="number"
+                      min={50} max={1000} step={10}
+                      value={baseCurveMm}
+                      onChange={(e) => setBaseCurveMm(Math.max(50, Math.min(1000, parseFloat(e.target.value) || 200)))}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      style={css.numInput}
+                    />
+                    <span style={css.unit}>mm</span>
+                  </span>
+                </div>
+                <input
+                  type="range" min={50} max={500} step={10}
+                  value={Math.min(baseCurveMm, 500)}
+                  onChange={(e) => setBaseCurveMm(parseFloat(e.target.value))}
+                  style={css.slider}
+                />
+                <div style={{ fontSize: 10, color: "#bbb", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
+                  larger radius = flatter bottom
+                </div>
+              </div>
+            )}
+          </div>
           <button
             style={{ ...css.exportBtn, ...(canExport && !lensMutation.isPending ? {} : css.exportBtnDisabled) }}
             disabled={!canExport || lensMutation.isPending}

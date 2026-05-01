@@ -189,6 +189,8 @@ def run_solver(
     max_iterations: int = 200,
     convergence_tol: float = 5e-4,
     step_size: float = 0.3,
+    incident_theta: float = 0.0,
+    incident_phi: float = 0.0,
 ) -> NDArray[np.float64]:
     """
     Inverse caustic solver.

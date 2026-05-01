@@ -70,7 +70,7 @@ function AppInner() {
       <div style={{
         flex: 1,
         display: "grid",
-        gridTemplateColumns: "340px 1fr 1fr",
+        gridTemplateColumns: "minmax(360px, 50%) 1fr",
         overflow: "hidden",
       }}>
         {/* Left panel */}
@@ -102,18 +102,18 @@ function AppInner() {
           </LeftSection>
         </div>
 
-        {/* Center: 3D viewer */}
-        <div style={{ borderRight: "1px solid #e0e0e0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <ThreeViewer
-            heightField={computeResult?.height_field ?? null}
-            physicalSizeX={params.physical_size_x}
-            physicalSizeY={params.physical_size_y}
-          />
-        </div>
-
-        {/* Right: caustic preview */}
+        {/* Right: previews stacked horizontally (wide + short) */}
         <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <CausticPreview />
+          <div style={{ flex: 1, borderBottom: "1px solid #e0e0e0", overflow: "hidden" }}>
+            <ThreeViewer
+              heightField={computeResult?.height_field ?? null}
+              physicalSizeX={params.physical_size_x}
+              physicalSizeY={params.physical_size_y}
+            />
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <CausticPreview />
+          </div>
         </div>
       </div>
     </div>

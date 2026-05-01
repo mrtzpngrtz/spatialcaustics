@@ -93,6 +93,7 @@ def height_field_to_stl(
     base_thickness: float,
     physical_size: float = 0.05,
     physical_size_y: float | None = None,
+    base_curve_radius: float | None = None,
 ) -> bytes:
     """
     Convert a height field to a watertight STL binary file.
@@ -120,11 +121,18 @@ def height_field_to_stl(
         height_field.ravel(),
     ], axis=1)  # (ny*nx, 3)
 
-    # Bottom surface: flat at z = -base_thickness
+    # Bottom surface: flat or spherical base curve
+    if base_curve_radius is not None:
+        cx, cy = size_x / 2, size_y / 2
+        R = abs(base_curve_radius)
+        sag = R - np.sqrt(np.maximum(R**2 - (xg - cx)**2 - (yg - cy)**2, 0.0))
+        bot_z = (-base_thickness + sag).ravel()
+    else:
+        bot_z = np.full(nx * ny, -base_thickness)
     bot_verts = np.stack([
         xg.ravel(),
         yg.ravel(),
-        np.full(nx * ny, -base_thickness),
+        bot_z,
     ], axis=1)  # (ny*nx, 3)
 
     # --- Triangulate surfaces ---
