@@ -2,7 +2,7 @@
 
 Inverse caustic lens designer: upload a target image → compute a refractive height field → preview real-time caustics in-browser → export printable STL for lens and mold.
 
-![2×2 viewer layout: lens 3D / caustic WebGL / setup diagram / scene viewer]
+![screenshot](screenshot.png)
 
 ## What it does
 
