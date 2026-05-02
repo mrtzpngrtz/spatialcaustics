@@ -316,17 +316,16 @@ function calcSiliconeMl(
   hf: number[][],
   sizeX: number, sizeY: number,
   thickness: number, baseThickness: number,
-  clearanceM: number,
+  clearanceM: number, extraWallM: number,
 ): number {
   const rows = hf.length;
   const cols = hf[0]?.length ?? 0;
   if (!rows || !cols) return 0;
   const pixelArea = (sizeX / cols) * (sizeY / rows);
-  // lens volume = integral of (h + base) over lens area
   let lensVol = 0;
   for (const row of hf) for (const v of row) lensVol += (v + baseThickness) * pixelArea;
-  // pocket volume = (sizeX + 2*cl) × (sizeY + 2*cl) × total_thickness
-  const lt = thickness + baseThickness;
+  // pocket depth = lens thickness + extra wall above lens
+  const lt = thickness + baseThickness + extraWallM;
   const pocketVol = (sizeX + 2 * clearanceM) * (sizeY + 2 * clearanceM) * lt;
   return Math.max(0, pocketVol - lensVol) * 1e6;
 }
@@ -351,7 +350,7 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
         computeResult.height_field,
         params.physical_size_x, params.physical_size_y,
         params.thickness, params.base_thickness,
-        clearanceMm / 1000,
+        clearanceMm / 1000, extraWallMm / 1000,
       )
     : null;
 
