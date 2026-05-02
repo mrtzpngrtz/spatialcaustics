@@ -275,6 +275,62 @@ function LightDirPicker() {
   );
 }
 
+// ── Spotlight / collimated toggle ─────────────────────────────────────────────
+
+function SpotlightControl() {
+  const { params, setParam } = useLensStore();
+  const isSpot = params.source_distance !== null;
+  const distM = params.source_distance ?? 0.5;
+
+  return (
+    <div style={{ paddingTop: 16, borderTop: "1px solid #f0f0f0", marginTop: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isSpot ? 12 : 0 }}>
+        <span style={{ ...rowCss.name, color: isSpot ? "#0a0a0a" : "#bbb" }}>spotlight</span>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <span style={{ fontSize: 10, color: "#aaa", fontFamily: "'JetBrains Mono', monospace" }}>
+            {isSpot ? "point src" : "collimated"}
+          </span>
+          <input
+            type="checkbox"
+            checked={isSpot}
+            onChange={(e) => setParam("source_distance", e.target.checked ? 0.5 : null)}
+            style={{ cursor: "pointer", accentColor: "#ff5500" }}
+          />
+        </label>
+      </div>
+      {isSpot && (
+        <div style={rowCss.row}>
+          <div style={rowCss.rowLabel}>
+            <span style={rowCss.name}>source dist</span>
+            <span style={{ display: "flex", alignItems: "baseline" }}>
+              <input
+                type="number"
+                min={5} max={500} step={1}
+                value={(distM * 100).toFixed(0)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setParam("source_distance", Math.min(5, Math.max(0.05, v / 100)));
+                }}
+                style={rowCss.numInput}
+              />
+              <span style={rowCss.unit}>cm</span>
+            </span>
+          </div>
+          <input
+            type="range" min={0.05} max={5} step={0.05}
+            value={distM}
+            onChange={(e) => setParam("source_distance", parseFloat(e.target.value))}
+            style={rowCss.slider}
+          />
+          <div style={{ fontSize: 9, color: "#888", fontFamily: "'JetBrains Mono', monospace", marginTop: 5 }}>
+            L_eff = {((params.proj_dist * distM) / (params.proj_dist + distM) * 100).toFixed(1)} cm
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ParamPanel() {
@@ -337,6 +393,7 @@ export function ParamPanel() {
             </select>
           </div>
           <LightDirPicker />
+          <SpotlightControl />
         </Section>
 
         <Section label="Geometry">

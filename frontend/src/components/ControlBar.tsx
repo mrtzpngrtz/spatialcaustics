@@ -24,8 +24,10 @@ async function fetchSimulate(
   projDist: number,
   physicalSizeX: number,
   physicalSizeY: number,
+  sourceDistance: number | null,
 ): Promise<SimulateResponse> {
-  const url = `/api/simulate?height_field_id=${encodeURIComponent(id)}&n=${n}&proj_dist=${projDist}&physical_size_x=${physicalSizeX}&physical_size_y=${physicalSizeY}`;
+  let url = `/api/simulate?height_field_id=${encodeURIComponent(id)}&n=${n}&proj_dist=${projDist}&physical_size_x=${physicalSizeX}&physical_size_y=${physicalSizeY}`;
+  if (sourceDistance !== null) url += `&source_distance=${sourceDistance}`;
   const res = await fetch(url);
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -99,8 +101,8 @@ export function ControlBar() {
   } = useLensStore();
 
   const simulateMutation = useMutation({
-    mutationFn: ({ id, n, projDist, physicalSizeX, physicalSizeY }: { id: string; n: number; projDist: number; physicalSizeX: number; physicalSizeY: number }) =>
-      fetchSimulate(id, n, projDist, physicalSizeX, physicalSizeY),
+    mutationFn: ({ id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance }: { id: string; n: number; projDist: number; physicalSizeX: number; physicalSizeY: number; sourceDistance: number | null }) =>
+      fetchSimulate(id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance),
     onSuccess: (data) => {
       setSimulatedCaustic(data.caustic_image);
     },
@@ -117,6 +119,7 @@ export function ControlBar() {
         projDist: params.proj_dist,
         physicalSizeX: params.physical_size_x,
         physicalSizeY: params.physical_size_y,
+        sourceDistance: params.source_distance,
       });
     },
   });
@@ -160,6 +163,7 @@ export function ControlBar() {
             physical_size_y: params.physical_size_y,
             incident_theta: params.incident_theta,
             incident_phi: params.incident_phi,
+            source_distance: params.source_distance,
           });
         }}
       >

@@ -45,6 +45,7 @@ const DEFAULT_PARAMS: LensParams = {
   physical_size_y: 0.05,
   incident_theta: 0,
   incident_phi: 0,
+  source_distance: null,
 };
 
 const DEFAULT_MOLD_PARAMS: MoldParams = {

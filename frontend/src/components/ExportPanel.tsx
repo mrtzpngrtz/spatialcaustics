@@ -233,11 +233,31 @@ function calcEpoxyMl(hf: number[][], thickness: number, sizeX: number, sizeY: nu
   return vol * 1e6; // m³ → ml
 }
 
+async function postExportContainer(body: object, filename: string): Promise<void> {
+  const res = await fetch("/api/export-container", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(detail.detail ?? `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ExportPanel({ onClose }: ExportPanelProps) {
   const { computeResult, params, moldParams, currentProjectName } = useLensStore();
   const canExport = computeResult !== null;
   const [biconvex, setBiconvex] = useState(false);
-  const [baseCurveMm, setBaseCurveMm] = useState(200); // mm, default 200mm radius
+  const [baseCurveMm, setBaseCurveMm] = useState(200);
+  const [containerWallMm, setContainerWallMm] = useState(3);
+  const [bottomHeightMm, setBottomHeightMm] = useState(2);
+  const [clearanceMm, setClearanceMm] = useState(0.3);
 
   const epoxyMl = computeResult
     ? calcEpoxyMl(computeResult.height_field, params.thickness, params.physical_size_x, params.physical_size_y)
@@ -262,8 +282,21 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
     mutationFn: () => postExportSTL(buildReq(true), buildFilename(currentProjectName, true, params, moldParams, epoxyMl)),
   });
 
+  const lensThicknessMm = params.thickness * 1000 + params.base_thickness * 1000;
+  const containerMutation = useMutation({
+    mutationFn: () => postExportContainer({
+      physical_size_x: params.physical_size_x,
+      physical_size_y: params.physical_size_y,
+      lens_total_thickness: lensThicknessMm / 1000,
+      wall_thickness: containerWallMm / 1000,
+      bottom_height: bottomHeightMm / 1000,
+      clearance: clearanceMm / 1000,
+    }, `${currentProjectName ?? "caustic"}_holder_${containerWallMm}mmwall.stl`),
+  });
+
   const error = (lensMutation.error as Error | null)?.message
-    ?? (moldMutation.error as Error | null)?.message ?? null;
+    ?? (moldMutation.error as Error | null)?.message
+    ?? (containerMutation.error as Error | null)?.message ?? null;
 
   return (
     <div style={css.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -355,6 +388,64 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
             onClick={() => moldMutation.mutate()}
           >
             {moldMutation.isPending ? "exporting…" : "↓ Export Mold STL"}
+          </button>
+        </div>
+
+        {/* Container / Holder STL */}
+        <div style={css.section}>
+          <span style={css.sectionLabel}>Lens Holder STL</span>
+          <div style={{ marginBottom: 10, fontSize: 10, color: "#888", fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5 }}>
+            Separate container the finished lens sits in.
+            {canExport && <> Pocket depth: <span style={{ color: "#ff5500" }}>{lensThicknessMm.toFixed(1)}mm</span>.</>}
+          </div>
+          <div style={css.row}>
+            <div style={css.rowLabel}>
+              <span style={css.name}>wall thickness</span>
+              <span style={{ display: "flex", alignItems: "baseline" }}>
+                <input type="number" min={1} max={10} step={0.5} value={containerWallMm}
+                  onChange={(e) => setContainerWallMm(parseFloat(e.target.value) || 3)}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                  style={css.numInput} />
+                <span style={css.unit}>mm</span>
+              </span>
+            </div>
+            <input type="range" min={1} max={10} step={0.5} value={containerWallMm}
+              onChange={(e) => setContainerWallMm(parseFloat(e.target.value))} style={css.slider} />
+          </div>
+          <div style={css.row}>
+            <div style={css.rowLabel}>
+              <span style={css.name}>bottom height</span>
+              <span style={{ display: "flex", alignItems: "baseline" }}>
+                <input type="number" min={0.5} max={10} step={0.5} value={bottomHeightMm}
+                  onChange={(e) => setBottomHeightMm(parseFloat(e.target.value) || 2)}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                  style={css.numInput} />
+                <span style={css.unit}>mm</span>
+              </span>
+            </div>
+            <input type="range" min={0.5} max={10} step={0.5} value={bottomHeightMm}
+              onChange={(e) => setBottomHeightMm(parseFloat(e.target.value))} style={css.slider} />
+          </div>
+          <div style={css.row}>
+            <div style={css.rowLabel}>
+              <span style={css.name}>clearance gap</span>
+              <span style={{ display: "flex", alignItems: "baseline" }}>
+                <input type="number" min={0} max={20} step={0.1} value={clearanceMm}
+                  onChange={(e) => setClearanceMm(parseFloat(e.target.value) || 0.3)}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                  style={css.numInput} />
+                <span style={css.unit}>mm</span>
+              </span>
+            </div>
+            <input type="range" min={0} max={20} step={0.1} value={clearanceMm}
+              onChange={(e) => setClearanceMm(parseFloat(e.target.value))} style={css.slider} />
+          </div>
+          <button
+            style={{ ...css.exportBtn, ...(!containerMutation.isPending ? {} : css.exportBtnDisabled) }}
+            disabled={containerMutation.isPending}
+            onClick={() => containerMutation.mutate()}
+          >
+            {containerMutation.isPending ? "exporting…" : "↓ Export Holder STL"}
           </button>
         </div>
 

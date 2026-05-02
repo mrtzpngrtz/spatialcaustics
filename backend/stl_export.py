@@ -105,10 +105,13 @@ def height_field_to_stl(
         physical_size:  Lens width in meters (x axis).
         physical_size_y: Lens depth in meters (y axis). Defaults to physical_size.
     """
-    size_x = physical_size
-    size_y = physical_size_y if physical_size_y is not None else physical_size
+    # Convert all physical dimensions to mm for slicer compatibility
+    size_x = physical_size * 1000.0
+    size_y = (physical_size_y if physical_size_y is not None else physical_size) * 1000.0
+    base_thickness_mm = base_thickness * 1000.0
+    h_mm = height_field * 1000.0
 
-    ny, nx = height_field.shape
+    ny, nx = h_mm.shape
 
     # --- Build vertex grids ---
     xs = np.linspace(0.0, size_x, nx)
@@ -118,17 +121,17 @@ def height_field_to_stl(
     top_verts = np.stack([
         xg.ravel(),
         yg.ravel(),
-        height_field.ravel(),
+        h_mm.ravel(),
     ], axis=1)  # (ny*nx, 3)
 
     # Bottom surface: flat or spherical base curve
     if base_curve_radius is not None:
         cx, cy = size_x / 2, size_y / 2
-        R = abs(base_curve_radius)
+        R = abs(base_curve_radius) * 1000.0
         sag = R - np.sqrt(np.maximum(R**2 - (xg - cx)**2 - (yg - cy)**2, 0.0))
-        bot_z = (-base_thickness + sag).ravel()
+        bot_z = (-base_thickness_mm + sag).ravel()
     else:
-        bot_z = np.full(nx * ny, -base_thickness)
+        bot_z = np.full(nx * ny, -base_thickness_mm)
     bot_verts = np.stack([
         xg.ravel(),
         yg.ravel(),
@@ -213,14 +216,16 @@ def height_field_to_mold_stl(
 
     Pouring epoxy and curing produces the lens.
     """
-    neg_h = thickness - height_field  # invert: tall lens peaks → deep mold cavities
+    # Convert all physical dimensions to mm
+    neg_h = (thickness - height_field) * 1000.0
     ny, nx = neg_h.shape
-    sx, sy = physical_size_x, physical_size_y
-    wt = wall_thickness
-    W = sx + 2 * wt   # outer width
-    H = sy + 2 * wt   # outer height
-    z_rim = thickness + border_height   # top of mold walls
-    z_bot = -base_thickness             # bottom of mold
+    sx  = physical_size_x  * 1000.0
+    sy  = physical_size_y  * 1000.0
+    wt  = wall_thickness   * 1000.0
+    W   = sx + 2 * wt
+    H   = sy + 2 * wt
+    z_rim = (thickness + border_height) * 1000.0
+    z_bot = -base_thickness * 1000.0
 
     # ── Cavity floor (neg_h grid, shifted by wt) ──────────────────────────────
     xs = np.linspace(wt, wt + sx, nx)
@@ -297,4 +302,99 @@ def height_field_to_mold_stl(
 
     buf = io.BytesIO()
     obj.save("caustic_mold.stl", fh=buf, mode=stl_stl.Mode.BINARY)
+    return buf.getvalue()
+
+
+def height_field_to_container_stl(
+    physical_size_x: float,
+    physical_size_y: float,
+    lens_total_thickness: float,
+    wall_thickness: float = 0.003,
+    bottom_height: float = 0.002,
+    clearance: float = 0.0003,
+    base_thickness: float = 0.002,  # kept for API compat, unused
+) -> bytes:
+    """
+    Holder that the finished lens sits in.
+
+    Geometry (all dims in mm internally):
+      - Outer footprint: (sx + 2*wt) × (sy + 2*wt)
+      - Solid base: bottom_height tall
+      - Pocket: lens_total_thickness deep, centered, with clearance on each side
+    """
+    # All coordinates in mm
+    sx  = physical_size_x  * 1000.0
+    sy  = physical_size_y  * 1000.0
+    wt  = wall_thickness   * 1000.0
+    bh  = bottom_height    * 1000.0
+    lt  = lens_total_thickness * 1000.0
+    cl  = max(0.0, clearance * 1000.0)
+    W   = sx + 2.0 * wt
+    H   = sy + 2.0 * wt
+    zpf = bh            # pocket floor z
+    zt  = bh + lt       # top of holder
+
+    # Pocket inner edges (with clearance, clamped)
+    ix0 = max(1e-6, wt - cl)
+    iy0 = max(1e-6, wt - cl)
+    ix1 = min(W - 1e-6, wt + sx + cl)
+    iy1 = min(H - 1e-6, wt + sy + cl)
+
+    def fq(p0, p1, p2, p3) -> NDArray[np.float64]:
+        """2 triangles from quad. Normal from right-hand rule on p0,p1,p2."""
+        a, b, c, d = (np.array(p, dtype=np.float64) for p in (p0, p1, p2, p3))
+        return np.array([[a, b, c], [a, c, d]], dtype=np.float64)
+
+    # ── Bottom face (z=0, full W×H, -z normal) ────────────────────────────────
+    bot = fq([0,0,0], [0,H,0], [W,H,0], [W,0,0])
+
+    # ── Outer walls (z=0 → zt) ────────────────────────────────────────────────
+    o_front = fq([0,0,0],[W,0,0],[W,0,zt],[0,0,zt])   # -y
+    o_back  = fq([W,H,0],[0,H,0],[0,H,zt],[W,H,zt])   # +y
+    o_left  = fq([0,H,0],[0,0,0],[0,0,zt],[0,H,zt])   # -x
+    o_right = fq([W,0,0],[W,H,0],[W,H,zt],[W,0,zt])   # +x
+
+    # ── Mid-rim frame + pocket floor at z=zpf (+z normal) ─────────────────────
+    def mq(x0: float, y0: float, x1: float, y1: float) -> NDArray[np.float64]:
+        return fq([x0,y0,zpf], [x1,y0,zpf], [x1,y1,zpf], [x0,y1,zpf])
+
+    mid = np.concatenate([
+        mq(0,   0,   W,   iy0),   # front strip
+        mq(0,   iy1, W,   H),     # back strip
+        mq(0,   iy0, ix0, iy1),   # left strip
+        mq(ix1, iy0, W,   iy1),   # right strip
+        mq(ix0, iy0, ix1, iy1),   # pocket floor
+    ])
+
+    # ── Inner pocket walls (z=zpf → zt, normals into pocket) ─────────────────
+    i_front = fq([ix1,iy0,zpf],[ix0,iy0,zpf],[ix0,iy0,zt],[ix1,iy0,zt])  # +y
+    i_back  = fq([ix0,iy1,zpf],[ix1,iy1,zpf],[ix1,iy1,zt],[ix0,iy1,zt])  # -y
+    i_left  = fq([ix0,iy0,zpf],[ix0,iy1,zpf],[ix0,iy1,zt],[ix0,iy0,zt])  # +x
+    i_right = fq([ix1,iy1,zpf],[ix1,iy0,zpf],[ix1,iy0,zt],[ix1,iy1,zt])  # -x
+
+    # ── Top rim frame (z=zt, +z normal) ───────────────────────────────────────
+    def tq(x0: float, y0: float, x1: float, y1: float) -> NDArray[np.float64]:
+        return fq([x0,y0,zt], [x1,y0,zt], [x1,y1,zt], [x0,y1,zt])
+
+    rim = np.concatenate([
+        tq(0,   0,   W,   iy0),
+        tq(0,   iy1, W,   H),
+        tq(0,   iy0, ix0, iy1),
+        tq(ix1, iy0, W,   iy1),
+    ])
+
+    all_tris = np.concatenate([
+        bot, o_front, o_back, o_left, o_right,
+        mid, i_front, i_back, i_left, i_right,
+        rim,
+    ])
+
+    n_tris = len(all_tris)
+    obj = stl_mesh.Mesh(np.zeros(n_tris, dtype=stl_mesh.Mesh.dtype))
+    for i, tri in enumerate(all_tris):
+        obj.vectors[i] = tri
+    obj.update_normals()
+
+    buf = io.BytesIO()
+    obj.save("caustic_holder.stl", fh=buf, mode=stl_stl.Mode.BINARY)
     return buf.getvalue()

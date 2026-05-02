@@ -70,7 +70,7 @@ function AppInner() {
       <div style={{
         flex: 1,
         display: "grid",
-        gridTemplateColumns: "minmax(360px, 50%) 1fr",
+        gridTemplateColumns: "minmax(260px, 33.333%) 1fr",
         overflow: "hidden",
       }}>
         {/* Left panel */}

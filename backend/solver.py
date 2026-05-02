@@ -191,6 +191,7 @@ def run_solver(
     step_size: float = 0.3,
     incident_theta: float = 0.0,
     incident_phi: float = 0.0,
+    source_distance: float | None = None,
 ) -> NDArray[np.float64]:
     """
     Inverse caustic solver.
@@ -202,18 +203,20 @@ def run_solver(
       Poisson step:  Δ(δh) = -(I_target - I_caustic) / alpha
       Update:        h ← h + step_size * δh
 
+      For a point source (spotlight) at distance D above lens:
+        L_eff = L*D/(L+D)  — harmonic mean; replaces proj_dist in alpha.
+        D→∞ recovers collimated (default).
+
     Args:
         image_b64:       Base64-encoded target image.
         n_refract:       Refractive index (e.g. 1.49 for PETG).
         thickness:       Max lens height in meters (used only for output scaling).
-        proj_dist:       Projection distance in meters.
+        proj_dist:       Projection distance (lens→wall) in meters.
         smoothing:       Gaussian regularization sigma in pixels.
         resolution:      Solver grid resolution (pixels per side).
         physical_size_x: Lens width in meters (default 5 cm).
         physical_size_y: Lens height in meters (default 5 cm).
-        max_iterations:  Max gradient-descent iterations.
-        convergence_tol: Stop when RMS error < tol.
-        step_size:       Gradient-descent step multiplier.
+        source_distance: Point-source distance above lens (m). None = collimated.
 
     Returns:
         height_field: (resolution, resolution) float64 array, values in
@@ -225,9 +228,15 @@ def run_solver(
 
     dx = 1.0 / resolution  # UV grid spacing
 
+    # Effective projection distance: harmonic mean for point source, plain L for collimated
+    if source_distance is not None and source_distance > 1e-6:
+        eff_proj = proj_dist * source_distance / (proj_dist + source_distance)
+    else:
+        eff_proj = proj_dist
+
     # Anisotropic alpha [1/m]: separate for x and y axes
-    alpha_x = proj_dist * (n_refract - 1.0) / (physical_size_x ** 2)
-    alpha_y = proj_dist * (n_refract - 1.0) / (physical_size_y ** 2)
+    alpha_x = eff_proj * (n_refract - 1.0) / (physical_size_x ** 2)
+    alpha_y = eff_proj * (n_refract - 1.0) / (physical_size_y ** 2)
 
     if abs(alpha_x) < 1e-12 or abs(alpha_y) < 1e-12:
         raise ValueError("alpha ≈ 0: check refractive index and projection distance.")

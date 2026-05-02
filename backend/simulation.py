@@ -45,6 +45,7 @@ def forward_caustic(
     output_resolution: int | None = None,
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
+    source_distance: float | None = None,
 ) -> NDArray[np.float64]:
     """
     Caustic intensity via Jacobian of the transport map (paraxial approximation).
@@ -64,8 +65,12 @@ def forward_caustic(
     Returns:
         Intensity image (res, res), float64 in [0, 1].
     """
-    alpha_x = proj_dist * (n_refract - 1.0) / (physical_size_x ** 2)
-    alpha_y = proj_dist * (n_refract - 1.0) / (physical_size_y ** 2)
+    if source_distance is not None and source_distance > 1e-6:
+        eff_proj = proj_dist * source_distance / (proj_dist + source_distance)
+    else:
+        eff_proj = proj_dist
+    alpha_x = eff_proj * (n_refract - 1.0) / (physical_size_x ** 2)
+    alpha_y = eff_proj * (n_refract - 1.0) / (physical_size_y ** 2)
 
     ny, nx = h.shape
     dx = 1.0 / max(nx, ny)
@@ -105,12 +110,13 @@ def simulate_to_base64(
     output_resolution: int = 512,
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
+    source_distance: float | None = None,
 ) -> str:
     """
     Run forward simulation and return a base64-encoded PNG with the correct
     physical aspect ratio (width : height = physical_size_x : physical_size_y).
     """
-    intensity = forward_caustic(h, n_refract, proj_dist, output_resolution, physical_size_x, physical_size_y)
+    intensity = forward_caustic(h, n_refract, proj_dist, output_resolution, physical_size_x, physical_size_y, source_distance)
 
     # Resize to physically correct aspect ratio
     aspect = physical_size_x / physical_size_y

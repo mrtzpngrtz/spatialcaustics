@@ -9,6 +9,7 @@ export interface ComputeRequest {
   physical_size_y: number;
   incident_theta: number;
   incident_phi: number;
+  source_distance: number | null;
 }
 
 export interface ComputeResponse {
@@ -62,4 +63,5 @@ export interface LensParams {
   physical_size_y: number;
   incident_theta: number;
   incident_phi: number;
+  source_distance: number | null;
 }
