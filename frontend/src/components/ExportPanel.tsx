@@ -38,11 +38,7 @@ async function postExportContainer(body: object, filename: string): Promise<void
   URL.revokeObjectURL(url);
 }
 
-function buildFilename(
-  projectName: string | null,
-  kind: string,
-  params: { n: number; thickness: number; resolution: number },
-): string {
+function buildFilename(projectName: string | null, kind: string, tags: string): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
@@ -50,7 +46,7 @@ function buildFilename(
   const base = projectName
     ? projectName.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 40)
     : "caustic";
-  return `${base}_${kind}_n${params.n.toFixed(2)}_${date}_${time}.stl`;
+  return `${base}_${kind}_${tags}_${date}_${time}.stl`;
 }
 
 const mono = "'JetBrains Mono', monospace";
@@ -366,8 +362,16 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
     base_curve_radius: !negative && biconvex ? baseCurveMm / 1000 : null,
   });
 
-  const lensMutation     = useMutation({ mutationFn: () => postExportSTL(buildLensReq(false), buildFilename(currentProjectName, "lens", params)) });
-  const moldMutation     = useMutation({ mutationFn: () => postExportSTL(buildLensReq(true),  buildFilename(currentProjectName, "mold", params)) });
+  const sx = (params.physical_size_x * 1000).toFixed(0);
+  const sy = (params.physical_size_y * 1000).toFixed(0);
+  const size = `${sx}x${sy}mm`;
+
+  const lensTags    = `${size}_n${params.n.toFixed(2)}_d${(params.thickness * 1000).toFixed(1)}mm_b${(params.base_thickness * 1000).toFixed(1)}mm`;
+  const moldTags    = `${size}_${epoxyMl.toFixed(2)}ml_bh${(moldParams.border_height * 1000).toFixed(1)}mm`;
+  const holderTags  = `${size}_w${containerWallMm}mm_cl${clearanceMm}mm_${siliconeMl !== null ? siliconeMl.toFixed(2) + "ml" : "nocompute"}`;
+
+  const lensMutation     = useMutation({ mutationFn: () => postExportSTL(buildLensReq(false), buildFilename(currentProjectName, "lens",   lensTags)) });
+  const moldMutation     = useMutation({ mutationFn: () => postExportSTL(buildLensReq(true),  buildFilename(currentProjectName, "mold",   moldTags)) });
   const containerMutation = useMutation({
     mutationFn: () => postExportContainer({
       physical_size_x:      params.physical_size_x,
@@ -377,7 +381,7 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
       bottom_height:        bottomHeightMm  / 1000,
       clearance:            clearanceMm     / 1000,
       extra_wall_height:    extraWallMm     / 1000,
-    }, `${currentProjectName ?? "caustic"}_holder_${containerWallMm}mmwall.stl`),
+    }, buildFilename(currentProjectName, "holder", holderTags)),
   });
 
   const error = (lensMutation.error as Error | null)?.message
