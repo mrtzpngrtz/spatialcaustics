@@ -4,6 +4,10 @@ Inverse caustic lens designer: upload a target image → compute a refractive he
 
 ![screenshot](screenshot.png)
 
+![config](config.png)
+
+![print](print.png)
+
 ## What it does
 
 Given a target grayscale image, the solver computes a lens surface (height field) such that collimated light refracted through it produces that image as a caustic pattern on a wall at a configurable projection distance. The lens can be 3D-printed in clear resin and filled with UV-curing epoxy.
