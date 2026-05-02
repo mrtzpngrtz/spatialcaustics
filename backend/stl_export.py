@@ -313,80 +313,71 @@ def height_field_to_container_stl(
     bottom_height: float = 0.002,
     clearance: float = 0.0003,
     base_thickness: float = 0.002,  # kept for API compat, unused
+    extra_wall_height: float = 0.0,
 ) -> bytes:
     """
-    Holder that the finished lens sits in.
+    Lidless box holder for a finished lens.
 
-    Geometry (all dims in mm internally):
-      - Outer footprint: (sx + 2*wt) × (sy + 2*wt)
-      - Solid base: bottom_height tall
-      - Pocket: lens_total_thickness deep, centered, with clearance on each side
+    Outer footprint: (lens_x + 2*clearance + 2*wall) × (lens_y + 2*clearance + 2*wall)
+    Inner pocket:    (lens_x + 2*clearance) × (lens_y + 2*clearance), depth = lens_total_thickness + extra_wall_height
+    Total height:    bottom_height + lens_total_thickness + extra_wall_height
+    Open top.
     """
-    # All coordinates in mm
-    sx  = physical_size_x  * 1000.0
-    sy  = physical_size_y  * 1000.0
-    wt  = wall_thickness   * 1000.0
-    bh  = bottom_height    * 1000.0
+    sx  = physical_size_x      * 1000.0
+    sy  = physical_size_y      * 1000.0
+    wt  = wall_thickness       * 1000.0
+    bh  = bottom_height        * 1000.0
     lt  = lens_total_thickness * 1000.0
-    cl  = max(0.0, clearance * 1000.0)
-    W   = sx + 2.0 * wt
-    H   = sy + 2.0 * wt
-    zpf = bh            # pocket floor z
-    zt  = bh + lt       # top of holder
+    cl  = max(0.0, clearance   * 1000.0)
+    ewh = max(0.0, extra_wall_height * 1000.0)
 
-    # Pocket inner edges (with clearance, clamped)
-    ix0 = max(1e-6, wt - cl)
-    iy0 = max(1e-6, wt - cl)
-    ix1 = min(W - 1e-6, wt + sx + cl)
-    iy1 = min(H - 1e-6, wt + sy + cl)
+    W   = sx + 2.0 * cl + 2.0 * wt
+    H   = sy + 2.0 * cl + 2.0 * wt
+    zpf = bh              # pocket floor z
+    zt  = bh + lt + ewh   # top z (open)
+
+    px0, py0 = wt, wt
+    px1, py1 = wt + sx + 2.0 * cl, wt + sy + 2.0 * cl
 
     def fq(p0, p1, p2, p3) -> NDArray[np.float64]:
-        """2 triangles from quad. Normal from right-hand rule on p0,p1,p2."""
         a, b, c, d = (np.array(p, dtype=np.float64) for p in (p0, p1, p2, p3))
         return np.array([[a, b, c], [a, c, d]], dtype=np.float64)
 
-    # ── Bottom face (z=0, full W×H, -z normal) ────────────────────────────────
-    bot = fq([0,0,0], [0,H,0], [W,H,0], [W,0,0])
+    # Outer bottom (z=0, full W×H, -z normal)
+    bot = fq([0, 0, 0], [0, H, 0], [W, H, 0], [W, 0, 0])
 
-    # ── Outer walls (z=0 → zt) ────────────────────────────────────────────────
-    o_front = fq([0,0,0],[W,0,0],[W,0,zt],[0,0,zt])   # -y
-    o_back  = fq([W,H,0],[0,H,0],[0,H,zt],[W,H,zt])   # +y
-    o_left  = fq([0,H,0],[0,0,0],[0,0,zt],[0,H,zt])   # -x
-    o_right = fq([W,0,0],[W,H,0],[W,H,zt],[W,0,zt])   # +x
+    # 4 outer walls (z=0 → zt, outward normals)
+    o_front = fq([0, 0, 0], [W, 0, 0], [W, 0, zt], [0, 0, zt])   # -y
+    o_back  = fq([W, H, 0], [0, H, 0], [0, H, zt], [W, H, zt])   # +y
+    o_left  = fq([0, H, 0], [0, 0, 0], [0, 0, zt], [0, H, zt])   # -x
+    o_right = fq([W, 0, 0], [W, H, 0], [W, H, zt], [W, 0, zt])   # +x
 
-    # ── Mid-rim frame + pocket floor at z=zpf (+z normal) ─────────────────────
-    def mq(x0: float, y0: float, x1: float, y1: float) -> NDArray[np.float64]:
-        return fq([x0,y0,zpf], [x1,y0,zpf], [x1,y1,zpf], [x0,y1,zpf])
-
-    mid = np.concatenate([
-        mq(0,   0,   W,   iy0),   # front strip
-        mq(0,   iy1, W,   H),     # back strip
-        mq(0,   iy0, ix0, iy1),   # left strip
-        mq(ix1, iy0, W,   iy1),   # right strip
-        mq(ix0, iy0, ix1, iy1),   # pocket floor
-    ])
-
-    # ── Inner pocket walls (z=zpf → zt, normals into pocket) ─────────────────
-    i_front = fq([ix1,iy0,zpf],[ix0,iy0,zpf],[ix0,iy0,zt],[ix1,iy0,zt])  # +y
-    i_back  = fq([ix0,iy1,zpf],[ix1,iy1,zpf],[ix1,iy1,zt],[ix0,iy1,zt])  # -y
-    i_left  = fq([ix0,iy0,zpf],[ix0,iy1,zpf],[ix0,iy1,zt],[ix0,iy0,zt])  # +x
-    i_right = fq([ix1,iy1,zpf],[ix1,iy0,zpf],[ix1,iy0,zt],[ix1,iy1,zt])  # -x
-
-    # ── Top rim frame (z=zt, +z normal) ───────────────────────────────────────
-    def tq(x0: float, y0: float, x1: float, y1: float) -> NDArray[np.float64]:
-        return fq([x0,y0,zt], [x1,y0,zt], [x1,y1,zt], [x0,y1,zt])
+    # Top rim (z=zt, +z normal, 4 strips between outer edge and pocket opening)
+    def rq(x0: float, y0: float, x1: float, y1: float) -> NDArray[np.float64]:
+        return fq([x0, y0, zt], [x1, y0, zt], [x1, y1, zt], [x0, y1, zt])
 
     rim = np.concatenate([
-        tq(0,   0,   W,   iy0),
-        tq(0,   iy1, W,   H),
-        tq(0,   iy0, ix0, iy1),
-        tq(ix1, iy0, W,   iy1),
+        rq(0,   0,   W,   py0),   # front strip
+        rq(0,   py1, W,   H),     # back strip
+        rq(0,   py0, px0, py1),   # left strip
+        rq(px1, py0, W,   py1),   # right strip
     ])
 
+    # 4 inner pocket walls (z=zpf → zt, normals pointing into pocket)
+    i_front = fq([px1, py0, zpf], [px0, py0, zpf], [px0, py0, zt], [px1, py0, zt])  # +y
+    i_back  = fq([px0, py1, zpf], [px1, py1, zpf], [px1, py1, zt], [px0, py1, zt])  # -y
+    i_left  = fq([px0, py0, zpf], [px0, py1, zpf], [px0, py1, zt], [px0, py0, zt])  # +x
+    i_right = fq([px1, py1, zpf], [px1, py0, zpf], [px1, py0, zt], [px1, py1, zt])  # -x
+
+    # Pocket floor (z=zpf, +z normal)
+    pf = fq([px0, py0, zpf], [px1, py0, zpf], [px1, py1, zpf], [px0, py1, zpf])
+
     all_tris = np.concatenate([
-        bot, o_front, o_back, o_left, o_right,
-        mid, i_front, i_back, i_left, i_right,
+        bot,
+        o_front, o_back, o_left, o_right,
         rim,
+        i_front, i_back, i_left, i_right,
+        pf,
     ])
 
     n_tris = len(all_tris)

@@ -189,9 +189,10 @@ class ExportContainerRequest(BaseModel):
     physical_size_x: float = Field(0.05, gt=0.01, le=0.5)
     physical_size_y: float = Field(0.05, gt=0.01, le=0.5)
     lens_total_thickness: float = Field(0.005, gt=0.0, le=0.1)
-    wall_thickness: float = Field(0.003, gt=0.0, le=0.02)
+    wall_thickness: float = Field(0.003, ge=0.0005, le=0.05)
     bottom_height: float = Field(0.002, gt=0.0, le=0.05, description="Solid base height below pocket (m)")
-    clearance: float = Field(0.0003, ge=0.0, le=0.02)
+    clearance: float = Field(0.0003, ge=0.0, le=0.05)
+    extra_wall_height: float = Field(0.0, ge=0.0, le=0.05, description="Extra wall height above lens surface (m)")
 
 
 @app.post("/api/export-container")
@@ -204,6 +205,7 @@ async def export_container(req: ExportContainerRequest) -> Response:
             wall_thickness=req.wall_thickness,
             bottom_height=req.bottom_height,
             clearance=req.clearance,
+            extra_wall_height=req.extra_wall_height,
         )
     except Exception as e:
         logger.exception("Container STL export error")
