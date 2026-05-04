@@ -79,7 +79,7 @@ frontend/src/
 
 Spatial Caustics basiert auf der Methode von Schwartzburg et al. (2014, ETH Zürich). Gegeben ein Zielbild berechnet ein iterativer Solver (Monge-Ampère) das Höhenprofil einer Linse so, dass kollimiertes Licht durch Refraktion exakt dieses Bild als Caustic auf eine Wand projiziert. Die Linse kann als STL exportiert, gedruckt oder gegossen werden.
 
-> Schwartzburg et al., *High-contrast Computational Caustic Design*, SIGGRAPH 2014
+> Schwartzburg, Y., Testuz, R., Tagliasacchi, A., Pauly, M. (2014). *Computational Caustic Design.* ACM Transactions on Graphics, 33(4). ETH Zürich.
 
 ## Physics
 
