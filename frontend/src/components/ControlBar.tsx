@@ -72,13 +72,11 @@ const css: Record<string, React.CSSProperties> = {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 11,
     color: "#888",
-    marginLeft: "auto",
   },
   error: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 11,
     color: "#ff5500",
-    marginLeft: "auto",
   },
   title: {
     fontSize: 13,
@@ -89,8 +87,32 @@ const css: Record<string, React.CSSProperties> = {
   },
 };
 
+function AboutPanel({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{ background: "#fff", width: 480, padding: "28px 32px", boxShadow: "0 8px 32px rgba(0,0,0,0.18)", position: "relative" }}>
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#aaa", lineHeight: 1, padding: 0 }}
+        >✕</button>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#999", marginBottom: 18 }}>About</div>
+        <p style={{ fontFamily: "Georgia, serif", fontSize: 13.5, lineHeight: 1.75, color: "#1a1a1a", margin: 0 }}>
+          Spatial Caustics basiert auf der Methode von Schwartzburg et al. (2014, ETH Zürich). Gegeben ein Zielbild berechnet ein iterativer Solver (Monge-Ampère) das Höhenprofil einer Linse so, dass kollimiertes Licht durch Refraktion exakt dieses Bild als Caustic auf eine Wand projiziert. Die Linse kann als STL exportiert, gedruckt oder gegossen werden.
+        </p>
+        <div style={{ marginTop: 20, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#bbb" }}>
+          Schwartzburg et al., <em>High-contrast Computational Caustic Design</em>, SIGGRAPH 2014
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ControlBar() {
   const [exportOpen, setExportOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const {
     targetImage,
     params,
@@ -189,7 +211,10 @@ export function ControlBar() {
         </span>
       )}
 
+      <button style={{ ...css.btn, marginLeft: "auto" }} onClick={() => setAboutOpen(true)}>About</button>
+
       {exportOpen && <ExportPanel onClose={() => setExportOpen(false)} />}
+      {aboutOpen && <AboutPanel onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }
