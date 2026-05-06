@@ -138,7 +138,7 @@ export function ControlBar() {
       simulateMutation.mutate({
         id: data.height_field_id,
         n: params.n,
-        projDist: params.proj_dist,
+        projDist: data.effective_proj_dist,
         physicalSizeX: params.physical_size_x,
         physicalSizeY: params.physical_size_y,
         sourceDistance: params.source_distance,

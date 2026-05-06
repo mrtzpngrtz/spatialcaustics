@@ -217,14 +217,15 @@ def height_field_to_mold_stl(
     Pouring epoxy and curing produces the lens.
     """
     # Convert all physical dimensions to mm
-    neg_h = (thickness - height_field) * 1000.0
+    h_max = float(np.max(height_field))
+    neg_h = (h_max - height_field) * 1000.0
     ny, nx = neg_h.shape
     sx  = physical_size_x  * 1000.0
     sy  = physical_size_y  * 1000.0
     wt  = wall_thickness   * 1000.0
     W   = sx + 2 * wt
     H   = sy + 2 * wt
-    z_rim = (thickness + border_height) * 1000.0
+    z_rim = (h_max + border_height) * 1000.0
     z_bot = -base_thickness * 1000.0
 
     # ── Cavity floor (neg_h grid, shifted by wt) ──────────────────────────────

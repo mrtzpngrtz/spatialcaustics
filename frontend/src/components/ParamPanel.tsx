@@ -378,7 +378,7 @@ export function ParamPanel() {
         <Section label="Optics">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px" }}>
             <SliderRow label="refractive index n" paramKey="n" min={1.1} max={2.5} step={0.001} unit="" decimals={3} />
-            <SliderRow label="thickness d" paramKey="thickness" min={0.001} max={0.02} step={0.0001} unit="mm" scale={1000} decimals={2} />
+            <SliderRow label="max depth d" paramKey="thickness" min={0.001} max={0.05} step={0.0001} unit="mm" scale={1000} decimals={2} />
             <SliderRow label="projection dist L" paramKey="proj_dist" min={0.05} max={3.0} step={0.001} unit="m" decimals={3} />
             <SliderRow label="smoothing σ" paramKey="smoothing" min={0} max={10} step={0.05} unit="px" decimals={2} />
           </div>

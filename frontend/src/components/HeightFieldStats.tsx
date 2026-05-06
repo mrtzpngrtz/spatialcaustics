@@ -2,7 +2,6 @@ import type { ComputeResponse } from "../types/api";
 
 interface HeightFieldStatsProps {
   result: ComputeResponse | null;
-  thickness: number;
 }
 
 const css: Record<string, React.CSSProperties> = {
@@ -79,7 +78,7 @@ function computeStats(hf: number[][]): {
   return { min, max, mean, std: Math.sqrt(variance / count) };
 }
 
-export function HeightFieldStats({ result, thickness }: HeightFieldStatsProps) {
+export function HeightFieldStats({ result }: HeightFieldStatsProps) {
   if (!result) {
     return (
       <div style={css.root}>
@@ -121,9 +120,15 @@ export function HeightFieldStats({ result, thickness }: HeightFieldStatsProps) {
           </span>
         </div>
         <div style={css.stat}>
-          <span style={css.statLabel}>Max Thickness</span>
+          <span style={css.statLabel}>Natural Depth</span>
           <span style={css.statValue}>
-            {(thickness * 1000).toFixed(1)}<span style={css.statUnit}>mm</span>
+            {result.natural_depth_mm.toFixed(3)}<span style={css.statUnit}>mm</span>
+          </span>
+        </div>
+        <div style={{ ...css.stat, gridColumn: "1 / -1" }}>
+          <span style={css.statLabel}>Render dist = LENS_TO_WALL_M in Mitsuba</span>
+          <span style={{ ...css.statValue, color: "#c60" }}>
+            {result.effective_proj_dist.toFixed(3)}<span style={{ ...css.statUnit, color: "#c60" }}>m</span>
           </span>
         </div>
         <div style={css.stat}>

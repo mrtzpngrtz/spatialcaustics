@@ -63,6 +63,8 @@ class ComputeResponse(BaseModel):
     width: int
     height: int
     height_field_id: str
+    natural_depth_mm: float    # physical lens surface depth before normalization
+    effective_proj_dist: float # correct wall distance for Mitsuba (= proj_dist × natural/thickness)
 
 
 class SaveProjectRequest(BaseModel):
@@ -97,7 +99,7 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
     that can be referenced by /api/simulate.
     """
     try:
-        h = run_solver(
+        h, h_natural_range = run_solver(
             image_b64=req.image,
             n_refract=req.n,
             thickness=req.thickness,
@@ -115,6 +117,8 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
     except Exception as e:
         logger.exception("Solver error")
         raise HTTPException(status_code=500, detail=f"Solver failed: {e}")
+
+    effective_proj_dist = req.proj_dist  # no normalization — h is physically correct
 
     field_id = str(uuid.uuid4())
     _height_field_store[field_id] = h
@@ -138,6 +142,8 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
         width=nx,
         height=ny,
         height_field_id=field_id,
+        natural_depth_mm=round(h_natural_range * 1000, 4),
+        effective_proj_dist=round(effective_proj_dist, 4),
     )
 
 

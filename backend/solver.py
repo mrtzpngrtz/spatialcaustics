@@ -11,7 +11,7 @@ GPU path: CuPy (cupyx.scipy.fft.dctn + cupyx.scipy.ndimage).
 
 Physical unit conventions (IMPORTANT):
   - Height field h in meters, UV domain [0,1]²
-  - Physical lens size S = 0.05 m (5 cm) — must match stl_export.py
+  - Physical lens size S = physical_size_x / physical_size_y (m), passed as args
   - Correct alpha: L*(n-1)/S²  [units: 1/m]
   - Jacobian: J = 1 + alpha * Δh_UV,  Δh_UV in [m] (UV dimensionless)
 """
@@ -244,6 +244,19 @@ def run_solver(
     # Load + normalize target intensity (CPU, then move to device)
     I_target_cpu = load_target_image(image_b64, resolution)
     I_target_cpu = normalize_intensity(I_target_cpu, np)
+
+    # Clamp I_target so the solver naturally produces h_max ≈ thickness.
+    # From the parabolic estimate: h_max ≈ (I_max - 1) / (pi² * alpha_min).
+    # Setting h_max = thickness → I_max = 1 + pi² * alpha_min * thickness.
+    # This prevents h from diverging for high-contrast images.
+    alpha_min = float(min(alpha_x, alpha_y))
+    I_clamp = 1.0 + (np.pi ** 2) * alpha_min * thickness
+    I_clamp = max(I_clamp, 1.05)  # always allow at least 5 % contrast
+    I_target_cpu = np.minimum(I_target_cpu, I_clamp)
+    I_target_cpu = normalize_intensity(I_target_cpu, np)  # renormalize after clamp
+    logger.info("I_target clamped at %.3f (alpha_min=%.3e, thickness=%.3fmm)",
+                I_clamp, alpha_min, thickness * 1000)
+
     I_target = _to_device(I_target_cpu)
 
     # Initialize height field on device
@@ -293,14 +306,15 @@ def run_solver(
     else:
         logger.warning("Solver: max iterations reached  rms=%.5f", rms)
 
-    # Normalize output: shift to [0, thickness]
     h_cpu = _to_cpu(h)
     h_cpu = h_cpu - h_cpu.min()
-    h_range = h_cpu.max()
-    if h_range > 1e-12:
-        h_cpu = h_cpu / h_range * thickness
-    else:
-        logger.warning("Height field near-zero range — target may be too uniform.")
+    h_natural_range = float(h_cpu.max())
 
-    logger.info("Solver done. h ∈ [%.4e, %.4e]", h_cpu.min(), h_cpu.max())
-    return h_cpu
+    if h_natural_range < 1e-12:
+        logger.warning("Height field near-zero range — target may be too uniform.")
+        h_natural_range = 1e-12
+
+    # No normalization — h encodes the physically correct deflections for proj_dist.
+    # Scaling h to a fixed thickness would change the effective focal distance.
+    logger.info("Solver done. depth=%.3f mm  proj_dist=%.3f m", h_natural_range * 1000, proj_dist)
+    return h_cpu, h_natural_range

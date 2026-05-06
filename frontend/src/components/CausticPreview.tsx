@@ -93,7 +93,7 @@ export function CausticPreview() {
     heightField: computeResult?.height_field ?? null,
     n: params.n,
     thickness: params.thickness,
-    projDist: params.proj_dist,
+    projDist: computeResult?.effective_proj_dist ?? params.proj_dist,
     physicalSizeX: params.physical_size_x,
     physicalSizeY: params.physical_size_y,
   });

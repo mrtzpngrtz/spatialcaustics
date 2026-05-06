@@ -17,6 +17,8 @@ export interface ComputeResponse {
   width: number;
   height: number;
   height_field_id: string;
+  natural_depth_mm: number;
+  effective_proj_dist: number;
 }
 
 export interface ExportSTLRequest {

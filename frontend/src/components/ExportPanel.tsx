@@ -366,7 +366,8 @@ export function ExportPanel({ onClose }: ExportPanelProps) {
   const sy = (params.physical_size_y * 1000).toFixed(0);
   const size = `${sx}x${sy}mm`;
 
-  const lensTags    = `${size}_n${params.n.toFixed(2)}_d${(params.thickness * 1000).toFixed(1)}mm_b${(params.base_thickness * 1000).toFixed(1)}mm`;
+  const effectiveL  = computeResult?.effective_proj_dist ?? params.proj_dist;
+  const lensTags    = `${size}_n${params.n.toFixed(2)}_d${(params.thickness * 1000).toFixed(1)}mm_b${(params.base_thickness * 1000).toFixed(1)}mm_L${(effectiveL * 1000).toFixed(0)}mm`;
   const moldTags    = `${size}_${epoxyMl.toFixed(2)}ml_bh${(moldParams.border_height * 1000).toFixed(1)}mm`;
   const holderTags  = `${size}_w${containerWallMm}mm_cl${clearanceMm}mm_${siliconeMl !== null ? siliconeMl.toFixed(2) + "ml" : "nocompute"}`;
 

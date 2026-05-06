@@ -98,7 +98,7 @@ function AppInner() {
           </LeftSection>
 
           <LeftSection label="Height Field Stats" defaultOpen={false}>
-            <HeightFieldStats result={computeResult} thickness={params.thickness} />
+            <HeightFieldStats result={computeResult} />
           </LeftSection>
         </div>
 
