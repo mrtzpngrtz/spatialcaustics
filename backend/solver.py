@@ -13,7 +13,9 @@ Physical unit conventions (IMPORTANT):
   - Height field h in meters, UV domain [0,1]²
   - Physical lens size S = 0.05 m (5 cm) — must match stl_export.py
   - Correct alpha: L*(n-1)/S²  [units: 1/m]
-  - Jacobian: J = 1 + alpha * Δh_UV,  Δh_UV in [m] (UV dimensionless)
+  - Jacobian: J = M² + M*(alpha_x*h_uu + alpha_y*h_vv)
+  - Intensity: I = M² / J
+  - Transport map: T(u) = u*M + alpha * ∇h  (M = magnification)
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import base64
 import io
 import os
 import site as _site_mod
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
@@ -134,16 +137,6 @@ def _build_aniso_eigenvalues(ny: int, nx: int, dx: float, alpha_x: float, alpha_
     return alpha_x * lam_x[None, :] + alpha_y * lam_y[:, None]
 
 
-def solve_poisson_dct(rhs, dx: float, LAM_inv, fft_mod, xp):
-    """Solve Δu = rhs (isotropic, legacy). LAM_inv eigenvalues of UV Laplacian."""
-    b = rhs * (dx * dx)
-    b = b - b.mean()
-    B = fft_mod.dctn(b, type=2)
-    U = B * LAM_inv
-    u = fft_mod.idctn(U, type=2)
-    return u - u.mean()
-
-
 def solve_poisson_aniso(rhs, LAM_inv, fft_mod, xp):
     """
     Solve (alpha_x*d²/du² + alpha_y*d²/dv²) u = rhs  (Neumann BC).
@@ -175,32 +168,46 @@ def compute_second_derivs(h, dx: float, xp):
     return h_uu, h_vv
 
 
+# ── Result dataclass ───────────────────────────────────────────────────────────
+
+@dataclass
+class SolverResult:
+    height_field: NDArray[np.float64]   # h(u,v) physically correct meters, NOT scaled up
+    actual_thickness: float              # h.max() in meters
+    converged: bool
+    iterations_used: int
+    final_rms_error: float
+    initial_rms_error: float
+    warnings: list[str] = field(default_factory=list)
+
+
 # ── Main solver ────────────────────────────────────────────────────────────────
 
 def run_solver(
     image_b64: str,
     n_refract: float,
-    thickness: float,
+    thickness: float,          # max clamp only, never scale up
     proj_dist: float,
-    smoothing: float,
+    smoothing: float,          # sigma at start (cools to 0)
     resolution: int,
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
+    magnification: float = 1.0,
     max_iterations: int = 200,
-    convergence_tol: float = 5e-4,
-    step_size: float = 0.3,
+    initial_step_size: float = 0.3,
+    smoothing_cooldown_iterations: int = 100,
     incident_theta: float = 0.0,
     incident_phi: float = 0.0,
     source_distance: float | None = None,
-) -> NDArray[np.float64]:
+) -> SolverResult:
     """
     Inverse caustic solver.
 
-    Physics (UV-space formulation):
-      Transport map: Φ(x) = x + L*(n-1)*∇h / S²
-      Jacobian:      J = 1 + alpha * Δh,    alpha = L*(n-1)/S²  [1/m]
-      Energy:        I_caustic = 1 / J
-      Poisson step:  Δ(δh) = -(I_target - I_caustic) / alpha
+    Physics (UV-space formulation with magnification M):
+      Transport map: T(u) = u*M + alpha * ∇h
+      Jacobian:      J = M² + M*(alpha_x*h_uu + alpha_y*h_vv)
+      Energy:        I_caustic = M² / J
+      Poisson step:  Δ(δh) = -(error) / max(M, 1.0)
       Update:        h ← h + step_size * δh
 
       For a point source (spotlight) at distance D above lens:
@@ -208,25 +215,31 @@ def run_solver(
         D→∞ recovers collimated (default).
 
     Args:
-        image_b64:       Base64-encoded target image.
-        n_refract:       Refractive index (e.g. 1.49 for PETG).
-        thickness:       Max lens height in meters (used only for output scaling).
-        proj_dist:       Projection distance (lens→wall) in meters.
-        smoothing:       Gaussian regularization sigma in pixels.
-        resolution:      Solver grid resolution (pixels per side).
-        physical_size_x: Lens width in meters (default 5 cm).
-        physical_size_y: Lens height in meters (default 5 cm).
-        source_distance: Point-source distance above lens (m). None = collimated.
+        image_b64:                   Base64-encoded target image.
+        n_refract:                   Refractive index (e.g. 1.49 for PETG).
+        thickness:                   Max lens height in meters (max clamp only, never scale up).
+        proj_dist:                   Projection distance (lens→wall) in meters.
+        smoothing:                   Starting Gaussian regularization sigma (cools to 0).
+        resolution:                  Solver grid resolution (pixels per side).
+        physical_size_x:             Lens width in meters (default 5 cm).
+        physical_size_y:             Lens height in meters (default 5 cm).
+        magnification:               Image magnification factor M (default 1.0).
+        max_iterations:              Maximum solver iterations.
+        initial_step_size:           Starting step size (dampened warmstart).
+        smoothing_cooldown_iterations: Iterations over which smoothing cools to 0.
+        incident_theta:              Incident light elevation from normal (degrees).
+        incident_phi:                Incident light azimuth (degrees, 0=+Y).
+        source_distance:             Point-source distance above lens (m). None = collimated.
 
     Returns:
-        height_field: (resolution, resolution) float64 array, values in
-                      [0, thickness] meters. Always returned on CPU.
+        SolverResult with height field and solver diagnostics.
     """
     xp = _xp()
     fft_mod = _cp_fft if _USE_GPU else cpu_fft
     ndimage_mod = _cp_ndimage if _USE_GPU else cpu_ndimage
 
     dx = 1.0 / resolution  # UV grid spacing
+    M = float(magnification)
 
     # Effective projection distance: harmonic mean for point source, plain L for collimated
     if source_distance is not None and source_distance > 1e-6:
@@ -241,13 +254,39 @@ def run_solver(
     if abs(alpha_x) < 1e-12 or abs(alpha_y) < 1e-12:
         raise ValueError("alpha ≈ 0: check refractive index and projection distance.")
 
+    # J clipping bounds based on magnification
+    J_min = max(0.05, M * M / 40.0)
+    J_max = min(40.0 * M * M, M * M / 0.001)
+
     # Load + normalize target intensity (CPU, then move to device)
     I_target_cpu = load_target_image(image_b64, resolution)
     I_target_cpu = normalize_intensity(I_target_cpu, np)
     I_target = _to_device(I_target_cpu)
 
-    # Initialize height field on device
-    h = xp.zeros((resolution, resolution), dtype=xp.float64)
+    # Incident light direction shift in UV space
+    # theta is elevation from normal, phi is azimuth (0=+Y in UV)
+    if incident_theta > 0.0:
+        theta_rad = float(incident_theta) * (np.pi / 180.0)
+        phi_rad = float(incident_phi) * (np.pi / 180.0)
+        # Shift in physical meters on projection plane
+        shift_phys = eff_proj * np.tan(theta_rad)
+        # Convert to UV shift (UV is [0,1] mapped to physical_size)
+        shift_u = shift_phys * np.sin(phi_rad) / physical_size_x
+        shift_v = shift_phys * np.cos(phi_rad) / physical_size_y
+        # Roll I_target to simulate oblique incidence
+        shift_u_px = int(round(shift_u * resolution))
+        shift_v_px = int(round(shift_v * resolution))
+        I_target = xp.roll(I_target, shift_v_px, axis=0)
+        I_target = xp.roll(I_target, shift_u_px, axis=1)
+
+    M2 = M * M  # M squared, used frequently
+
+    # Normalize I_target so mean(M²/I_target_clipped) = 1
+    I_target_clipped = xp.clip(I_target, M2 / 40.0, float('inf'))
+    ratio = M2 / I_target_clipped
+    ratio_mean = float(ratio.mean())
+    if ratio_mean > 1e-12:
+        I_target = I_target * ratio_mean  # rescale so mean(M²/I_target_clipped) ≈ 1
 
     # Precompute anisotropic DCT eigenvalues once
     LAM = _build_aniso_eigenvalues(resolution, resolution, dx, float(alpha_x), float(alpha_y), xp)
@@ -255,52 +294,146 @@ def run_solver(
     LAM_inv = 1.0 / LAM
     LAM_inv[0, 0] = 0.0        # zero mean enforced here
 
+    # Warmstart: solve Poisson directly for h_0
+    I_target_safe = xp.clip(I_target, M2 / 40.0, float('inf'))
+    rhs_warm = M * (1.0 / I_target_safe - 1.0)
+    rhs_warm = rhs_warm - rhs_warm.mean()
+    h_0 = solve_poisson_aniso(rhs_warm, LAM_inv, fft_mod, xp)
+    h = h_0 * initial_step_size  # dampened warmstart
+
     logger.info(
-        "Solver start: res=%d ax=%.4e ay=%.4e iter_max=%d device=%s",
-        resolution, alpha_x, alpha_y, max_iterations, "GPU" if _USE_GPU else "CPU",
+        "Solver start: res=%d M=%.2f ax=%.4e ay=%.4e iter_max=%d device=%s",
+        resolution, M, alpha_x, alpha_y, max_iterations, "GPU" if _USE_GPU else "CPU",
     )
 
+    step_size = initial_step_size
+    rms_history: list[float] = []
+    initial_rms_error = 0.0
+    final_rms_error = 0.0
+    converged = False
+    clipping_active = False
+    iterations_used = 0
+
     for iteration in range(max_iterations):
-        # Anisotropic Jacobian: J = 1 + alpha_x*h_uu + alpha_y*h_vv
+        # 1. Compute J = M² + M*(alpha_x*h_uu + alpha_y*h_vv)
         h_uu, h_vv = compute_second_derivs(h, dx, xp)
-        J = 1.0 + alpha_x * h_uu + alpha_y * h_vv
-        J = xp.clip(J, 0.05, 40.0)
+        J = M2 + M * (alpha_x * h_uu + alpha_y * h_vv)
 
-        # Induced intensity: I = 1/J  (energy conservation)
-        I_current = normalize_intensity(1.0 / J, xp)
+        # 2. Clip J, track if clipping is active
+        J_before = J
+        J = xp.clip(J, J_min, J_max)
+        iter_clipping = bool(xp.any(J_before != J))
+        if iter_clipping:
+            clipping_active = True
 
-        # Intensity residual
+        # 3. I_current = M² / J, normalize so mean = M²
+        I_current = M2 / J
+        I_current_mean = float(I_current.mean())
+        if I_current_mean > 1e-12:
+            I_current = I_current * (M2 / I_current_mean)
+
+        # 4. error = I_target - I_current
         error = I_target - I_current
+
+        # 5. Solvability constraint: error -= error.mean()
+        error = error - error.mean()
+
         rms = float(xp.sqrt(xp.mean(error ** 2)))
 
+        if iteration == 0:
+            initial_rms_error = rms
+
         if iteration % 20 == 0:
-            logger.debug("iter=%d  rms=%.5f", iteration, rms)
+            logger.debug("iter=%d  rms=%.5f  step=%.4f", iteration, rms, step_size)
 
-        if rms < convergence_tol and iteration > 5:
-            logger.info("Converged at iter %d  rms=%.5f", iteration, rms)
-            break
+        # Check convergence
+        if iteration > 5 and initial_rms_error > 1e-12:
+            # Relative convergence
+            if rms > 0.0 and rms / initial_rms_error < 1e-3:
+                converged = True
+                iterations_used = iteration + 1
+                final_rms_error = rms
+                logger.info("Converged (relative) at iter %d  rms=%.5f", iteration, rms)
+                break
+            # Stagnation check over last 5 iterations
+            if len(rms_history) >= 5:
+                last5_mean = sum(rms_history[-5:]) / 5.0
+                if last5_mean > 1e-12 and abs(rms - last5_mean) / rms < 1e-4:
+                    converged = True
+                    iterations_used = iteration + 1
+                    final_rms_error = rms
+                    logger.info("Converged (stagnation) at iter %d  rms=%.5f", iteration, rms)
+                    break
 
-        # Anisotropic Poisson step
-        delta_h = solve_poisson_aniso(-error, LAM_inv, fft_mod, xp)
+        rms_history.append(rms)
 
+        # 6. Poisson step: delta_h = solve_poisson_aniso(-error / max(M, 1.0), ...)
+        delta_h = solve_poisson_aniso(-error / max(M, 1.0), LAM_inv, fft_mod, xp)
+
+        # 7. Update h
         h = h + step_size * delta_h
 
-        # Gaussian regularization
-        if smoothing > 0.0:
-            h = ndimage_mod.gaussian_filter(
-                h, sigma=float(smoothing), mode="reflect"
-            )
-    else:
-        logger.warning("Solver: max iterations reached  rms=%.5f", rms)
+        # 8. Adaptive step size
+        if len(rms_history) >= 2 and rms > rms_history[-2]:
+            step_size *= 0.5
+        else:
+            step_size = min(step_size * 1.05, 0.7)
 
-    # Normalize output: shift to [0, thickness]
+        # 9. Cooling smoothing
+        sigma_k = smoothing * max(0.0, 1.0 - iteration / max(1, smoothing_cooldown_iterations))
+        if sigma_k > 0.1:
+            h = ndimage_mod.gaussian_filter(h, sigma=float(sigma_k), mode="reflect")
+
+    else:
+        # Max iterations reached
+        iterations_used = max_iterations
+        final_rms_error = rms_history[-1] if rms_history else 0.0
+        logger.warning("Solver: max iterations reached  rms=%.5f", final_rms_error)
+
+    if not converged and iterations_used == 0:
+        iterations_used = max_iterations
+
+    # ── Output normalization (CRITICAL — no upscaling, only clamp down) ────────
     h_cpu = _to_cpu(h)
     h_cpu = h_cpu - h_cpu.min()
-    h_range = h_cpu.max()
-    if h_range > 1e-12:
-        h_cpu = h_cpu / h_range * thickness
-    else:
-        logger.warning("Height field near-zero range — target may be too uniform.")
+    actual_thickness = float(h_cpu.max())
 
-    logger.info("Solver done. h ∈ [%.4e, %.4e]", h_cpu.min(), h_cpu.max())
-    return h_cpu
+    solver_warnings: list[str] = []
+
+    if actual_thickness < 1e-12:
+        logger.warning("Height field near-zero range — target may be too uniform.")
+        actual_thickness = 0.0
+
+    if actual_thickness > thickness:
+        # Only clamp DOWN when natural height exceeds the user's max
+        effective_L = proj_dist * (thickness / actual_thickness)
+        solver_warnings.append(
+            f"Natural thickness {actual_thickness*1000:.2f}mm exceeds max {thickness*1000:.1f}mm. "
+            f"Clamping: effective projection distance becomes {effective_L*100:.1f}cm instead of {proj_dist*100:.1f}cm. "
+            f"Consider increasing projection distance or reducing magnification."
+        )
+        h_cpu = h_cpu * (thickness / actual_thickness)
+        actual_thickness = thickness
+    else:
+        logger.info(
+            "Height field physical: %.4e m (max allowed %.4e m) — L_eff = L",
+            actual_thickness, thickness,
+        )
+
+    if clipping_active:
+        solver_warnings.append(
+            "J clipping active — target contrast exceeds physical limit. Effective contrast reduced."
+        )
+
+    logger.info("Solver done. h ∈ [%.4e, %.4e]  converged=%s  iters=%d",
+                h_cpu.min(), h_cpu.max(), converged, iterations_used)
+
+    return SolverResult(
+        height_field=h_cpu,
+        actual_thickness=actual_thickness,
+        converged=converged,
+        iterations_used=iterations_used,
+        final_rms_error=final_rms_error,
+        initial_rms_error=initial_rms_error,
+        warnings=solver_warnings,
+    )

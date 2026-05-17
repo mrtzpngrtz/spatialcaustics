@@ -13,31 +13,6 @@ import io
 from PIL import Image
 
 
-def compute_gradient(
-    h: NDArray[np.float64],
-    dx: float,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """
-    Central-difference gradient of h.
-    Boundary uses one-sided differences (forward/backward).
-    Returns (dh_dx, dh_dy), each shape (ny, nx).
-    """
-    dh_dy = np.empty_like(h)
-    dh_dx = np.empty_like(h)
-
-    # Interior: central differences
-    dh_dy[1:-1, :] = (h[2:, :] - h[:-2, :]) / (2.0 * dx)
-    dh_dx[:, 1:-1] = (h[:, 2:] - h[:, :-2]) / (2.0 * dx)
-
-    # Boundaries: one-sided
-    dh_dy[0, :] = (h[1, :] - h[0, :]) / dx
-    dh_dy[-1, :] = (h[-1, :] - h[-2, :]) / dx
-    dh_dx[:, 0] = (h[:, 1] - h[:, 0]) / dx
-    dh_dx[:, -1] = (h[:, -1] - h[:, -2]) / dx
-
-    return dh_dx, dh_dy
-
-
 def forward_caustic(
     h: NDArray[np.float64],
     n_refract: float,
@@ -46,21 +21,26 @@ def forward_caustic(
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
     source_distance: float | None = None,
+    magnification: float = 1.0,
 ) -> NDArray[np.float64]:
     """
     Caustic intensity via Jacobian of the transport map (paraxial approximation).
 
-    I(x) = 1 / |det dΦ/dx| = 1 / |1 + alpha * Δh(x)|
+    Transport map: T(u) = u*M + alpha * gradient
+    Jacobian: J = M² + M*(alpha_x*h_uu + alpha_y*h_vv)
+    I(x) = M² / J
 
-    This is the same model used by the WebGL shader and matches the solver's
-    internal energy model. It is always bounded (no rays escape the domain)
-    and produces a clean result even for partially-converged height fields.
+    This is the same model used by the solver's internal energy model.
 
     Args:
         h:                 Height field (ny, nx), meters.
         n_refract:         Refractive index.
         proj_dist:         Projection distance (meters).
         output_resolution: Output size in pixels. Defaults to h.shape[0].
+        physical_size_x:   Lens width in meters.
+        physical_size_y:   Lens height in meters.
+        source_distance:   Point-source distance above lens (m). None = collimated.
+        magnification:     Image magnification factor M.
 
     Returns:
         Intensity image (res, res), float64 in [0, 1].
@@ -71,6 +51,9 @@ def forward_caustic(
         eff_proj = proj_dist
     alpha_x = eff_proj * (n_refract - 1.0) / (physical_size_x ** 2)
     alpha_y = eff_proj * (n_refract - 1.0) / (physical_size_y ** 2)
+
+    M = float(magnification)
+    M2 = M * M
 
     ny, nx = h.shape
     dx = 1.0 / max(nx, ny)
@@ -83,9 +66,12 @@ def forward_caustic(
         arr[:,  0] = arr[:,  1]; arr[:, -1] = arr[:, -2]
         arr[ 0, :] = arr[ 1, :]; arr[-1, :] = arr[-2, :]
 
-    J = 1.0 + alpha_x * h_uu + alpha_y * h_vv
-    J = np.clip(J, 0.05, 40.0)
-    intensity = 1.0 / J
+    # Jacobian with magnification: J = M² + M*(alpha_x*h_uu + alpha_y*h_vv)
+    J = M2 + M * (alpha_x * h_uu + alpha_y * h_vv)
+    J_min = max(0.05, M2 / 40.0)
+    J_max = min(40.0 * M2, M2 / 0.001)
+    J = np.clip(J, J_min, J_max)
+    intensity = M2 / J
 
     # Normalize to [0, 1]
     i_max = intensity.max()
@@ -111,12 +97,16 @@ def simulate_to_base64(
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
     source_distance: float | None = None,
+    magnification: float = 1.0,
 ) -> str:
     """
     Run forward simulation and return a base64-encoded PNG with the correct
     physical aspect ratio (width : height = physical_size_x : physical_size_y).
     """
-    intensity = forward_caustic(h, n_refract, proj_dist, output_resolution, physical_size_x, physical_size_y, source_distance)
+    intensity = forward_caustic(
+        h, n_refract, proj_dist, output_resolution,
+        physical_size_x, physical_size_y, source_distance, magnification
+    )
 
     # Resize to physically correct aspect ratio
     aspect = physical_size_x / physical_size_y

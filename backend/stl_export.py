@@ -162,14 +162,14 @@ def height_field_to_stl(
     bot_right_edge = bot_verts[np.arange(ny) * nx + (nx - 1)]
 
     # Wall normals: outward = away from lens center
-    # Bottom wall (y=0): normal -y → inward=False with reversed orientation
-    wall_bottom = _side_wall_quads(top_bottom_edge, bot_bottom_edge, inward=True)
+    # Bottom wall (y=0): normal -y
+    wall_bottom = _side_wall_quads(top_bottom_edge, bot_bottom_edge, inward=False)
     # Top wall (y=phys): normal +y
-    wall_top = _side_wall_quads(top_top_edge[::-1], bot_top_edge[::-1], inward=True)
+    wall_top = _side_wall_quads(top_top_edge[::-1], bot_top_edge[::-1], inward=False)
     # Left wall (x=0): normal -x
-    wall_left = _side_wall_quads(top_left_edge[::-1], bot_left_edge[::-1], inward=True)
+    wall_left = _side_wall_quads(top_left_edge[::-1], bot_left_edge[::-1], inward=False)
     # Right wall (x=phys): normal +x
-    wall_right = _side_wall_quads(top_right_edge, bot_right_edge, inward=True)
+    wall_right = _side_wall_quads(top_right_edge, bot_right_edge, inward=False)
 
     # --- Concatenate all triangles ---
     all_tris = np.concatenate([
