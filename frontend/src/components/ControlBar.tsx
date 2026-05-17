@@ -25,8 +25,9 @@ async function fetchSimulate(
   physicalSizeX: number,
   physicalSizeY: number,
   sourceDistance: number | null,
+  magnification: number = 1.0,
 ): Promise<SimulateResponse> {
-  let url = `/api/simulate?height_field_id=${encodeURIComponent(id)}&n=${n}&proj_dist=${projDist}&physical_size_x=${physicalSizeX}&physical_size_y=${physicalSizeY}`;
+  let url = `/api/simulate?height_field_id=${encodeURIComponent(id)}&n=${n}&proj_dist=${projDist}&physical_size_x=${physicalSizeX}&physical_size_y=${physicalSizeY}&magnification=${magnification}`;
   if (sourceDistance !== null) url += `&source_distance=${sourceDistance}`;
   const res = await fetch(url);
   if (!res.ok) {
@@ -123,8 +124,8 @@ export function ControlBar() {
   } = useLensStore();
 
   const simulateMutation = useMutation({
-    mutationFn: ({ id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance }: { id: string; n: number; projDist: number; physicalSizeX: number; physicalSizeY: number; sourceDistance: number | null }) =>
-      fetchSimulate(id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance),
+    mutationFn: ({ id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance, magnification }: { id: string; n: number; projDist: number; physicalSizeX: number; physicalSizeY: number; sourceDistance: number | null; magnification: number }) =>
+      fetchSimulate(id, n, projDist, physicalSizeX, physicalSizeY, sourceDistance, magnification),
     onSuccess: (data) => {
       setSimulatedCaustic(data.caustic_image);
     },
@@ -142,6 +143,7 @@ export function ControlBar() {
         physicalSizeX: params.physical_size_x,
         physicalSizeY: params.physical_size_y,
         sourceDistance: params.source_distance,
+        magnification: params.magnification,
       });
     },
   });
@@ -186,6 +188,7 @@ export function ControlBar() {
             incident_theta: params.incident_theta,
             incident_phi: params.incident_phi,
             source_distance: params.source_distance,
+            magnification: params.magnification,
           });
         }}
       >

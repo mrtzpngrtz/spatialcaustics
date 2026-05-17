@@ -2,7 +2,7 @@
 title Caustic Lens Designer
 
 echo Starting backend...
-start "Backend" cmd /k "cd /d %~dp0backend && C:\Users\mrtz\anaconda3\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8001 --log-level info"
+start "Backend" cmd /k "cd /d %~dp0backend && .venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8001 --log-level info"
 
 echo Waiting for backend...
 timeout /t 3 /nobreak >nul

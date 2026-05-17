@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useLensStore } from "../stores/lensStore";
-import type { LensParams } from "../types/api";
+import type { LensParams, ComputeResponse } from "../types/api";
 
 // ── Shared section header ──────────────────────────────────────────────────────
 
@@ -331,10 +331,129 @@ function SpotlightControl() {
   );
 }
 
+// ── Smoothing warning ─────────────────────────────────────────────────────────
+
+function SmoothingWarning() {
+  const { params, setParam } = useLensStore();
+  const res = params.resolution;
+  // σ_eff = σ · √(cooldown/3) — cumulative blur with cooling over 100 iterations
+  const cooldown = 100;
+  const sigmaEff = (v: number) => Math.round(v * Math.sqrt(cooldown / 3));
+  const minSuggested = 1;                            // 1px is always enough
+  const maxAllowed   = Math.max(2, Math.round(res / 64));  // σ_eff ≤ ~res/16
+
+  const tooLow  = params.smoothing < minSuggested;
+  const tooHigh = params.smoothing > maxAllowed;
+
+  if (!tooLow && !tooHigh) return null;
+
+  const fixVal = minSuggested;
+  const effStr = sigmaEff(params.smoothing).toString();
+
+  const msg = tooHigh
+    ? `σ=${params.smoothing}px → σ_eff≈${effStr}px nach Cooling — Caustic wird weich`
+    : `σ=0 → keine Regularisierung — Micro-Features ggf. undruckbar`;
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: "6px 10px",
+      background: "#fff8f0",
+      border: "1px solid #ff9944",
+      borderRadius: 4,
+      fontSize: 10,
+      fontFamily: "'JetBrains Mono', monospace",
+      color: "#cc5500",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    }}>
+      <span>{msg}</span>
+      <button
+        onClick={() => setParam("smoothing", fixVal)}
+        style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10,
+          background: "#ff5500",
+          color: "#fff",
+          border: "none",
+          borderRadius: 3,
+          padding: "3px 8px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+          flexShrink: 0,
+        }}
+      >
+        σ = {fixVal} px setzen
+      </button>
+    </div>
+  );
+}
+
+// ── Paraxial validity indicator ────────────────────────────────────────────────
+
+function ParaxialIndicator({ computeResult }: { computeResult: ComputeResponse | null }) {
+  const { params } = useLensStore();
+  const actualThickness = computeResult?.actual_thickness ?? (params.thickness * 0.5);
+  const validity = (params.n - 1) * actualThickness / params.physical_size_x;
+
+  let color = "#22aa44";
+  let label = "paraxial OK";
+  if (validity > 0.5) {
+    color = "#cc2222";
+    label = "paraxial limit!";
+  } else if (validity > 0.3) {
+    color = "#dd8800";
+    label = "paraxial marginal";
+  }
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      marginTop: 4,
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 10,
+      color,
+    }}>
+      <span style={{
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        background: color,
+        flexShrink: 0,
+        display: "inline-block",
+      }} />
+      <span>{label} ({validity.toFixed(3)})</span>
+    </div>
+  );
+}
+
+// ── Magnification info row ─────────────────────────────────────────────────────
+
+function MagnificationInfo() {
+  const { params } = useLensStore();
+  const wCm = (params.physical_size_x * params.magnification * 100).toFixed(1);
+  const hCm = (params.physical_size_y * params.magnification * 100).toFixed(1);
+  return (
+    <div style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 10,
+      color: "#888",
+      marginTop: 2,
+      marginBottom: 8,
+    }}>
+      image at wall: {wCm}cm × {hCm}cm
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ParamPanel() {
-  const { params, setParam, targetImageSize } = useLensStore();
+  const { params, setParam, targetImageSize, computeResult } = useLensStore();
   const resOptions = [32, 64, 128, 256, 512, 1024, 2048];
 
   const applyImageRatio = () => {
@@ -375,32 +494,43 @@ export function ParamPanel() {
       `}</style>
 
       <div className="param-panel">
+
         <Section label="Optics">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px" }}>
-            <SliderRow label="refractive index n" paramKey="n" min={1.1} max={2.5} step={0.001} unit="" decimals={3} />
-            <SliderRow label="thickness d" paramKey="thickness" min={0.001} max={0.02} step={0.0001} unit="mm" scale={1000} decimals={2} />
-            <SliderRow label="projection dist L" paramKey="proj_dist" min={0.05} max={3.0} step={0.001} unit="m" decimals={3} />
-            <SliderRow label="smoothing σ" paramKey="smoothing" min={0} max={10} step={0.05} unit="px" decimals={2} />
+            <SliderRow label="refractive index n" paramKey="n"        min={1.1}  max={2.0}  step={0.001} unit=""  decimals={3} />
+            <SliderRow label="projection dist L"   paramKey="proj_dist" min={0.05} max={3.0}  step={0.005} unit="m" decimals={3} />
           </div>
-          <div style={{ marginTop: 6, ...rowCss.selectRow }}>
-            <span style={rowCss.name}>resolution</span>
-            <select
-              value={params.resolution}
-              onChange={(e) => setParam("resolution", parseInt(e.target.value) as LensParams["resolution"])}
-              style={rowCss.select}
-            >
-              {resOptions.map((r) => <option key={r} value={r}>{r}×{r}</option>)}
-            </select>
-          </div>
+          <SliderRow label="magnification M" paramKey="magnification" min={0.5} max={5.0} step={0.1} unit="×" decimals={1} />
+          <MagnificationInfo />
+          <ParaxialIndicator computeResult={computeResult} />
           <LightDirPicker />
           <SpotlightControl />
         </Section>
 
-        <Section label="Geometry">
+        <Section label="Solver">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px" }}>
+            <SliderRow label="smoothing σ" paramKey="smoothing" min={0} max={20} step={0.1} unit="px" decimals={1} />
+            <div style={{ marginTop: 6, ...rowCss.row }}>
+              <div style={rowCss.rowLabel}>
+                <span style={rowCss.name}>resolution</span>
+                <select
+                  value={params.resolution}
+                  onChange={(e) => setParam("resolution", parseInt(e.target.value) as LensParams["resolution"])}
+                  style={rowCss.select}
+                >
+                  {resOptions.map((r) => <option key={r} value={r}>{r}×{r}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          <SmoothingWarning />
+        </Section>
+
+        <Section label="Print">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 28px" }}>
-            <SliderRow label="base thickness" paramKey="base_thickness" min={0.001} max={0.01} step={0.0001} unit="mm" scale={1000} decimals={2} />
-            <SliderRow label="lens width" paramKey="physical_size_x" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
-            <SliderRow label="lens height" paramKey="physical_size_y" min={0.01} max={0.3} step={0.001} unit="cm" scale={100} decimals={2} />
+            <SliderRow label="base height"  paramKey="base_thickness"  min={0.0005} max={0.02}  step={0.0005} unit="mm" scale={1000} decimals={1} />
+            <SliderRow label="lens width"   paramKey="physical_size_x" min={0.01}   max={0.3}   step={0.001}  unit="cm" scale={100}  decimals={2} />
+            <SliderRow label="lens height"  paramKey="physical_size_y" min={0.01}   max={0.3}   step={0.001}  unit="cm" scale={100}  decimals={2} />
           </div>
           {targetImageSize && (
             <div style={{ marginTop: 4 }}>

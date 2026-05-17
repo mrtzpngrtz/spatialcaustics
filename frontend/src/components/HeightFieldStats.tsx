@@ -55,6 +55,17 @@ const css: Record<string, React.CSSProperties> = {
     textTransform: "uppercase" as const,
     letterSpacing: "0.08em",
   },
+  warning: {
+    marginTop: 12,
+    padding: "8px 12px",
+    background: "#fff8f0",
+    border: "1px solid #ff9944",
+    borderRadius: 4,
+    fontSize: 10,
+    fontFamily: "'JetBrains Mono', monospace",
+    color: "#cc5500",
+    lineHeight: 1.55,
+  },
 };
 
 function computeStats(hf: number[][]): {
@@ -92,6 +103,13 @@ export function HeightFieldStats({ result, thickness }: HeightFieldStatsProps) {
   const { min, max, mean, std } = computeStats(result.height_field);
   const toMM = (v: number) => (v * 1000).toFixed(3);
 
+  const convergedColor = result.converged ? "#22aa44" : "#dd8800";
+  const convergedText = result.converged
+    ? "yes"
+    : `no / ${result.iterations_used} iter`;
+
+  const rmsPercent = (result.final_rms_error * 100).toFixed(2);
+
   return (
     <div style={css.root}>
       <span style={css.header}>Height Field — {result.width}×{result.height}</span>
@@ -121,9 +139,12 @@ export function HeightFieldStats({ result, thickness }: HeightFieldStatsProps) {
           </span>
         </div>
         <div style={css.stat}>
-          <span style={css.statLabel}>Max Thickness</span>
-          <span style={css.statValue}>
-            {(thickness * 1000).toFixed(1)}<span style={css.statUnit}>mm</span>
+          <span style={css.statLabel}>Phys. Thickness</span>
+          <span style={{
+            ...css.statValue,
+            color: result.actual_thickness < thickness * 0.95 ? "#ff5500" : "#0a0a0a",
+          }}>
+            {(result.actual_thickness * 1000).toFixed(3)}<span style={css.statUnit}>mm</span>
           </span>
         </div>
         <div style={css.stat}>
@@ -132,7 +153,29 @@ export function HeightFieldStats({ result, thickness }: HeightFieldStatsProps) {
             {result.width}<span style={css.statUnit}>px</span>
           </span>
         </div>
+        <div style={css.stat}>
+          <span style={css.statLabel}>Converged</span>
+          <span style={{ ...css.statValue, fontSize: 14, color: convergedColor, paddingTop: 4 }}>
+            {convergedText}
+          </span>
+        </div>
+        <div style={css.stat}>
+          <span style={css.statLabel}>Final RMS</span>
+          <span style={{ ...css.statValue, fontSize: 14, paddingTop: 4 }}>
+            {rmsPercent}<span style={css.statUnit}>%</span>
+          </span>
+        </div>
       </div>
+
+      {result.warnings && result.warnings.length > 0 && (
+        <div>
+          {result.warnings.map((w, i) => (
+            <div key={i} style={css.warning}>
+              {w}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

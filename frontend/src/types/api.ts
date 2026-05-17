@@ -10,6 +10,7 @@ export interface ComputeRequest {
   incident_theta: number;
   incident_phi: number;
   source_distance: number | null;
+  magnification: number;
 }
 
 export interface ComputeResponse {
@@ -17,6 +18,11 @@ export interface ComputeResponse {
   width: number;
   height: number;
   height_field_id: string;
+  actual_thickness: number;
+  converged: boolean;
+  iterations_used: number;
+  final_rms_error: number;
+  warnings: string[];
 }
 
 export interface ExportSTLRequest {
@@ -64,4 +70,5 @@ export interface LensParams {
   incident_theta: number;
   incident_phi: number;
   source_distance: number | null;
+  magnification: number;
 }

@@ -42,13 +42,15 @@ class ComputeRequest(BaseModel):
     n: float = Field(1.49, ge=1.0, le=3.0, description="Refractive index")
     thickness: float = Field(0.003, gt=0.0, le=0.05, description="Max lens thickness (m)")
     proj_dist: float = Field(0.5, gt=0.0, le=5.0, description="Projection distance (m)")
-    smoothing: float = Field(1.0, ge=0.0, le=20.0, description="Gaussian smoothing sigma (px)")
+    smoothing: float = Field(1.0, ge=0.0, le=20.0, description="Gaussian smoothing sigma at start (px)")
     resolution: int = Field(256, ge=32, le=2048, description="Solver grid resolution")
     physical_size_x: float = Field(0.05, gt=0.01, le=0.5, description="Lens width (m)")
     physical_size_y: float = Field(0.05, gt=0.01, le=0.5, description="Lens height (m)")
     incident_theta: float = Field(0.0, ge=0.0, le=85.0, description="Incident light elevation from normal (deg)")
     incident_phi: float = Field(0.0, ge=0.0, lt=360.0, description="Incident light azimuth (deg, 0=+Y)")
     source_distance: float | None = Field(None, description="Point-source distance above lens (m). None=collimated.")
+    magnification: float = Field(1.0, ge=0.5, le=5.0, description="Image magnification factor")
+    smoothing_cooldown_iterations: int = Field(100, ge=0, le=200, description="Iterations over which smoothing cools to 0")
 
     @field_validator("image")
     @classmethod
@@ -63,6 +65,11 @@ class ComputeResponse(BaseModel):
     width: int
     height: int
     height_field_id: str
+    actual_thickness: float
+    converged: bool
+    iterations_used: int
+    final_rms_error: float
+    warnings: list[str]
 
 
 class SaveProjectRequest(BaseModel):
@@ -97,7 +104,7 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
     that can be referenced by /api/simulate.
     """
     try:
-        h = run_solver(
+        result = run_solver(
             image_b64=req.image,
             n_refract=req.n,
             thickness=req.thickness,
@@ -106,6 +113,8 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
             resolution=req.resolution,
             physical_size_x=req.physical_size_x,
             physical_size_y=req.physical_size_y,
+            magnification=req.magnification,
+            smoothing_cooldown_iterations=req.smoothing_cooldown_iterations,
             incident_theta=req.incident_theta,
             incident_phi=req.incident_phi,
             source_distance=req.source_distance,
@@ -116,6 +125,7 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
         logger.exception("Solver error")
         raise HTTPException(status_code=500, detail=f"Solver failed: {e}")
 
+    h = result.height_field
     field_id = str(uuid.uuid4())
     _height_field_store[field_id] = h
     _height_field_meta[field_id] = {
@@ -124,6 +134,7 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
         "proj_dist": req.proj_dist,
         "physical_size_x": req.physical_size_x,
         "physical_size_y": req.physical_size_y,
+        "magnification": req.magnification,
     }
 
     # Prune store if it grows large (keep last 20)
@@ -138,6 +149,11 @@ async def compute_height_field(req: ComputeRequest) -> ComputeResponse:
         width=nx,
         height=ny,
         height_field_id=field_id,
+        actual_thickness=result.actual_thickness,
+        converged=result.converged,
+        iterations_used=result.iterations_used,
+        final_rms_error=result.final_rms_error,
+        warnings=result.warnings,
     )
 
 
@@ -226,6 +242,7 @@ async def simulate_caustic(
     physical_size_x: float = 0.05,
     physical_size_y: float = 0.05,
     source_distance: float | None = None,
+    magnification: float = 1.0,
 ) -> dict[str, str]:
     """
     Run CPU forward caustic simulation on a previously computed height field.
@@ -247,6 +264,7 @@ async def simulate_caustic(
             physical_size_x=physical_size_x,
             physical_size_y=physical_size_y,
             source_distance=source_distance,
+            magnification=magnification,
         )
     except Exception as e:
         logger.exception("Simulation error")

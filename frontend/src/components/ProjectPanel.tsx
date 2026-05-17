@@ -209,7 +209,7 @@ export function ProjectPanel() {
   const renameRef = useRef<HTMLInputElement>(null);
 
   const qc = useQueryClient();
-  const { targetImage, params, computeResult, currentProjectId, currentProjectName, setTargetImage, setRawImage, setParam, setComputeResult, setCurrentProjectName, setCurrentProjectId } = useLensStore();
+  const { targetImage, params, computeResult, currentProjectId, currentProjectName, setTargetImage, setRawImage, loadParams, setComputeResult, setCurrentProjectName, setCurrentProjectId } = useLensStore();
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ["projects"],
@@ -239,10 +239,8 @@ export function ProjectPanel() {
   const loadMutation = useMutation({
     mutationFn: apiLoadProject,
     onSuccess: (proj) => {
-      // Restore params
-      (Object.keys(proj.params) as Array<keyof typeof proj.params>).forEach((k) => {
-        setParam(k, proj.params[k] as never);
-      });
+      // Restore params — loadParams clamps all values to valid ranges
+      loadParams(proj.params);
       // Restore image
       const url = `data:image/png;base64,${proj.target_image}`;
       setRawImage(proj.target_image);
@@ -253,11 +251,17 @@ export function ProjectPanel() {
       if (proj.height_field) {
         const ny = proj.height_field.length;
         const nx = proj.height_field[0]?.length ?? 0;
+        const hmax = Math.max(...proj.height_field.map((r) => Math.max(...r)));
         setComputeResult({
           height_field: proj.height_field,
           width: nx,
           height: ny,
-          height_field_id: "",   // not in store — user needs to re-compute for STL/sim
+          height_field_id: "",
+          actual_thickness: hmax,
+          converged: true,
+          iterations_used: 0,
+          final_rms_error: 0,
+          warnings: [],
         });
       }
     },
