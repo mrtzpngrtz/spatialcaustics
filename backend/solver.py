@@ -281,12 +281,13 @@ def run_solver(
 
     M2 = M * M  # M squared, used frequently
 
-    # Normalize I_target so mean(M²/I_target_clipped) = 1
+    # Rescale I_target so mean(I_target_clipped) == M² (energy-consistent).
+    # Validated by forward_raytrace experiment: yields higher SSIM than the
+    # previous mean(M²/I_target_clipped)==1 formulation on a bimodal target.
     I_target_clipped = xp.clip(I_target, M2 / 40.0, float('inf'))
-    ratio = M2 / I_target_clipped
-    ratio_mean = float(ratio.mean())
-    if ratio_mean > 1e-12:
-        I_target = I_target * ratio_mean  # rescale so mean(M²/I_target_clipped) ≈ 1
+    clipped_mean = float(I_target_clipped.mean())
+    if clipped_mean > 1e-12:
+        I_target = I_target * (M2 / clipped_mean)
 
     # Precompute anisotropic DCT eigenvalues once
     LAM = _build_aniso_eigenvalues(resolution, resolution, dx, float(alpha_x), float(alpha_y), xp)
